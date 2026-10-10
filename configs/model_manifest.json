@@ -1,0 +1,11 @@
+{
+  "TiRex-2": {
+    "repo_id": "NX-AI/TiRex-2",
+    "revision": "30788a311699acba7e6393ad9700ea7b7cb9bb2d",
+    "local_directory": "models/tirex2",
+    "sha256": {
+      "model-config.yaml": "cddbe6d0be4919cb7b0cad747fb19a295264e129d1c0790cf62133b4cb5da727",
+      "model.ckpt": "184b160ffbe4c01a26beeba14015ff3507c7497e1f3577114187bbc1d19fcac1"
+    }
+  }
+}

@@ -1,0 +1,109 @@
+name: Run Core Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-tests:
+    name: core-tests (py${{ matrix.python-version }}, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+          cache: false
+
+      - name: Set up MSVC (for torch.compile on windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$vsPath) { throw "Visual Studio C++ tools not found" }
+
+          $before = @{}
+          Get-ChildItem Env: | ForEach-Object { $before[$_.Name] = $_.Value }
+          & "$vsPath\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          Get-Command cl.exe -ErrorAction Stop
+
+          # Persist the developer environment for subsequent workflow steps.
+          Get-ChildItem Env: | Where-Object { $before[$_.Name] -cne $_.Value } | ForEach-Object {
+            "$($_.Name)=$($_.Value)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
+      # Resolve each Python version instead of reusing the lockfile's Python.
+      - name: Select Python version for the test environment
+        run: pixi add --feature test "python=${{ matrix.python-version }}.*" --no-install
+
+      - name: Run tests on CPU
+        run: pixi run test
+
+  core-tests-frozen:
+    name: core-tests frozen (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+          cache: false
+
+      - name: Run tests on CPU using pixi.lock
+        run: pixi run --frozen test
+
+  core-tests-lowest-bound:
+    name: core-tests lowest bound (py3.11, torch2.8.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+          cache: false
+
+      - name: Select lowest supported Python and CPU torch versions
+        run: |
+          # PyTorch 2.8 imports setuptools from torch.utils.cpp_extension.
+          pixi add --feature test "python=3.11.*" "setuptools>=68" --no-install
+          pixi add --feature test --platform linux-64-cpu --pypi "torch==2.8.0" --index https://download.pytorch.org/whl/cpu --no-install
+          # Match PyTorch 2.8's Triton version; flashrnn otherwise pulls an unconstrained version.
+          pixi add --feature test --platform linux-64-cpu --pypi "triton==3.4.0" --no-install
+
+      - name: Run tests on CPU
+        run: pixi run test
+
+  core-tests-preview:
+    name: core-tests preview (py3.15, ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          run-install: false
+          cache: false
+
+      - name: Select preview Python version for the test environment
+        # Preview dependency availability and compatibility should not block stable CI.
+        continue-on-error: true
+        run: |
+          pixi workspace channel add --feature test conda-forge/label/python_rc --priority=-1 --no-install
+          pixi add --feature test --platform linux-64-cpu "python=3.15.*" --no-install
+
+      - name: Run tests on CPU
+        run: pixi run test

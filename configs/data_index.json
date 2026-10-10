@@ -1,0 +1,26 @@
+{
+  "regression_speed_v1": {
+    "directory": "data/regression/comma2k19",
+    "historical_directory": "data/comma2k19",
+    "reference_definition": "legacy interpolated speed, development regression only",
+    "sha256": {
+      "dataset_manifest.json": "d489f1568a0528cd73ead9ebffb8ee87b58a18cf9eab4e14587446bfe596a790",
+      "delay_profiles.json": "1b044ffe830c16bcd07d3a3b085e0305889b853cfe3081f3ffc85f5a62568d58",
+      "segments_manifest.csv": "caa437022ab39da4d515debcdf14c6643746348a9de93e150cb13c257bf8e6c9",
+      "speed_segments.csv": "02a7e468e84b392963269f8f781f3674ce4b24ed4a45319459009f1a68865af9"
+    }
+  },
+  "prepared_comma2k19_v1": {
+    "directory": "data/prepared/comma2k19/v1",
+    "historical_directory": "data/adapter_training/comma2k19/v1",
+    "dataset_id": "662e2eef6ef7d84c04f99d95de6bd7fb6627ef66fe704ddd771f6981f4f99828",
+    "reference_definition": "causal previous-sample ZOH CAN speed",
+    "raw_directory": "data/raw/comma2k19/processed",
+    "historical_identity_is_unchanged": true
+  },
+  "raw_comma2k19": {
+    "directory": "data/raw/comma2k19/processed",
+    "download_manifest": "data/raw/comma2k19/download_manifest.json",
+    "archives_copied": false
+  }
+}

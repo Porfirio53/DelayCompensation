@@ -1,0 +1,50 @@
+{
+  "format": "tirex-official-reference-v1",
+  "created_at": "2026-10-09",
+  "official_source_directory": "baselines/tirex-2",
+  "official_source_sha256": "a8c746e38e58e9300724d8160b1ca99a08e7d1efe8a037b00d424bf9f0cfcaab",
+  "optimization_source_directory": "TiRex",
+  "initial_copy_sha256": "a8c746e38e58e9300724d8160b1ca99a08e7d1efe8a037b00d424bf9f0cfcaab",
+  "model_lock": {
+    "repo_id": "NX-AI/TiRex-2",
+    "revision": "30788a311699acba7e6393ad9700ea7b7cb9bb2d",
+    "local_directory": "models/tirex2",
+    "sha256": {
+      "model-config.yaml": "cddbe6d0be4919cb7b0cad747fb19a295264e129d1c0790cf62133b4cb5da727",
+      "model.ckpt": "184b160ffbe4c01a26beeba14015ff3507c7497e1f3577114187bbc1d19fcac1"
+    }
+  },
+  "references": {
+    "C": {
+      "directory": "results/tirex_official/C",
+      "original_directory": "results/20261008_192857_796410_C",
+      "sha256": {
+        "tirex2_predictions.csv": "bc27fb7207450e0b1371785069c7e32f629066a7008f489a1a5eb08c92731e99",
+        "experiment_config.json": "1755539277e4fc7bd5c5aca7e5225959d577144b23332abd3f22126b178a47f7",
+        "run_metadata.json": "4cfcae71adc21cd0b3cdc3e89a3833cb72022a8463f039ccae84ba124b1e4f9a",
+        "metrics_summary.csv": "4ca0e95a454b654a404fcab317ee34e3d9cc956d968091fcf75469b2a7e39372",
+        "metrics_by_sequence.csv": "6c553f4196871160d9ce1a0acead6eb80cea0c820425a06abcc6cc1c4865c456"
+      },
+      "rows": 70010
+    },
+    "D": {
+      "directory": "results/tirex_official/D",
+      "original_directory": "results/20261008_201122_740673_D",
+      "sha256": {
+        "tirex2_predictions.csv": "2c081918b2bef5f7f98c93ece738abd17fb17789565c30f3442e3638cb3aaba2",
+        "experiment_config.json": "34bb13d9c1d30550ac0388f87bf4c81d8a6ddc66f9e7765f900ca005e0ebeec3",
+        "run_metadata.json": "07513d0ce32a7aa96ef6b839852d81ee2947722e6674f8e316695866a2dc6148",
+        "metrics_summary.csv": "bf00f6c827f65c19a9cb51bc16761283bec79d6566300250f7a303f44b77f558",
+        "metrics_by_sequence.csv": "404f4f6d0cdd20668da9f636854058e243d2c0e81455ed8848da5b4d1f9f104e"
+      },
+      "rows": 13200
+    }
+  },
+  "diagnostics": {
+    "slope_window_points": 21,
+    "speed_slope_threshold": 0.2,
+    "other_slope_percentile": 50,
+    "high_change_percentile": 90,
+    "worst_queries_per_unit": 20
+  }
+}

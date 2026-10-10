@@ -1,0 +1,500 @@
+{
+  "mode": "C",
+  "created_at": "2026-10-08T19:28:57.796410+08:00",
+  "selection": {
+    "sequences": [
+      "speed_seg01",
+      "speed_seg02",
+      "speed_seg03",
+      "speed_seg04",
+      "speed_seg05"
+    ],
+    "delays_ms": [
+      175,
+      300
+    ],
+    "max_queries": null
+  },
+  "baseline_cache_key": "68c039d1b26d484792bee2b60b37e97561d61f83ec968aac42d01eb944fd63c5",
+  "baseline_cache_directory": "results/baseline_cache/68c039d1b26d484792bee2b60b37e97561d61f83ec968aac42d01eb944fd63c5",
+  "baseline_cache_reused": true,
+  "method_metadata": {
+    "Ours": {
+      "method": "Ours",
+      "config_path": "Ours/configs/fixed.json",
+      "context_length": 9,
+      "batch_size": 1,
+      "timing_semantics": "Per-query wall time including adapter validation, microsecond conversion, complete lower and upper endpoint solves, and deadline publication; package loading is recorded separately.",
+      "publication_semantics": "Accepted guarded-dual midpoint and interval only before D; otherwise latest finite arrived observation and no interval.",
+      "fixed_config": {
+        "N": 9,
+        "epsilon": 0.0021161622080393084,
+        "M": 66.05417600362378,
+        "H": 0.35,
+        "D": 0.01,
+        "eta_opt": 0.0001,
+        "solver_tol": 1e-09,
+        "max_iter": 150,
+        "observation_relative_tol": 1e-07,
+        "gamma_relative_tol": 1e-06,
+        "gamma_absolute_tol": 1e-08
+      },
+      "config_sha256": "8c6b90db157c463808ed4efccbb1323a24463bfab5c2b5dd5b5459f027238968",
+      "load_time_s": 0.3833037919830531,
+      "device": "cpu",
+      "deadline_s": 0.01,
+      "replay_wall_s": 80.18730266694911,
+      "status_counts": {
+        "solver_PrimalInfeasible": 33198,
+        "ok": 36803,
+        "deadline_exceeded": 6,
+        "solver_NumericalError": 3
+      }
+    },
+    "Chronos-2": {
+      "name": "Chronos-2",
+      "model_path": "/Users/pattoncharles/Documents/毕业设计/研究生/大论文/实验/experiment2/models/chronos2",
+      "context_length": 2048,
+      "batch_size": 128,
+      "device": "cpu",
+      "seed": 42,
+      "seed_policy": "sha256 JSON [base_seed,sequence,delay_ms], first 8 bytes modulo 2**31; reset per replay unit",
+      "last_unit_seed": 487656614,
+      "load_time_s": 0.7428191660437733,
+      "inference_time_s": 1376.6600862513296,
+      "batch_count": 550,
+      "elapsed_s_definition": "batch wall-clock duration divided by actual batch size",
+      "batch_elapsed_s_definition": "wall-clock duration of the complete inference batch",
+      "point_forecast": "median",
+      "cross_learning": false,
+      "replay_wall_s": 1380.828423250001,
+      "status_counts": {
+        "ok": 70010
+      }
+    },
+    "Sundial": {
+      "name": "Sundial",
+      "model_path": "/Users/pattoncharles/Documents/毕业设计/研究生/大论文/实验/experiment2/models/sundial",
+      "context_length": 672,
+      "batch_size": 128,
+      "device": "cpu",
+      "seed": 42,
+      "seed_policy": "sha256 JSON [base_seed,sequence,delay_ms], first 8 bytes modulo 2**31; reset per replay unit",
+      "last_unit_seed": 487656614,
+      "load_time_s": 0.5456334160408005,
+      "inference_time_s": 1836.7619531564415,
+      "batch_count": 550,
+      "elapsed_s_definition": "batch wall-clock duration divided by actual batch size",
+      "batch_elapsed_s_definition": "wall-clock duration of the complete inference batch",
+      "point_forecast": "median",
+      "cross_learning": false,
+      "num_samples": 20,
+      "inference_api": "official forward; one generation patch; cache disabled",
+      "normalization": "official generate mean and std(unbiased=False) + 1e-5",
+      "randomness": "stable seed reset per sequence/delay; fixed query order and batch size",
+      "replay_wall_s": 1840.979624458938,
+      "status_counts": {
+        "ok": 70010
+      }
+    },
+    "TiRex-2": {
+      "name": "TiRex-2",
+      "model_path": "/home/patton/experiment2/models/tirex2",
+      "context_length": 2048,
+      "batch_size": 256,
+      "device": "cuda",
+      "seed": 42,
+      "seed_policy": "sha256 JSON [base_seed,sequence,delay_ms], first 8 bytes modulo 2**31; reset per replay unit",
+      "last_unit_seed": 487656614,
+      "load_time_s": 2.620916099999704,
+      "inference_time_s": 92.50000688599539,
+      "batch_count": 280,
+      "elapsed_s_definition": "batch wall-clock duration divided by actual batch size",
+      "batch_elapsed_s_definition": "wall-clock duration of the complete inference batch",
+      "point_forecast": "median",
+      "cross_learning": false,
+      "parameter_device": "cuda:0",
+      "gpu_name": "NVIDIA GeForce RTX 4080 Laptop GPU",
+      "cuda_version": "12.8",
+      "cuda_home": "/home/patton/experiment2/.venv",
+      "replay_wall_s": 95.49058803200023,
+      "status_counts": {
+        "ok": 70010
+      }
+    }
+  },
+  "baseline_models_loaded_this_run": [
+    "TiRex-2"
+  ],
+  "torch_imported_this_run": true,
+  "query_counts": {
+    "Chronos-2": 70010,
+    "Ours": 70010,
+    "Sundial": 70010,
+    "TiRex-2": 70010
+  },
+  "wall_time_s": 105.04364836899913,
+  "python": "3.12.15 | packaged by Anaconda, Inc. | (main, Oct  1 2026, 20:20:25) [GCC 14.3.0]",
+  "platform": "Linux-6.8.0-40-generic-x86_64-with-glibc2.35",
+  "cpu_count": 32,
+  "protected_sources_before": {
+    "Ours": "96312c08920aa3439ca6aa6f664943bbf39441c8431d3a439b1a46b772634512",
+    "baselines": "6808ee884c672f179ca981a3d3171fa4b4858e0f4d0b86409c55c5143665d0b5"
+  },
+  "protected_sources_after": {
+    "Ours": "96312c08920aa3439ca6aa6f664943bbf39441c8431d3a439b1a46b772634512",
+    "baselines": "6808ee884c672f179ca981a3d3171fa4b4858e0f4d0b86409c55c5143665d0b5"
+  },
+  "ours_config_sha256": "8c6b90db157c463808ed4efccbb1323a24463bfab5c2b5dd5b5459f027238968",
+  "dependency_versions": {
+    "numpy": "2.2.6",
+    "scipy": "1.16.3",
+    "clarabel": "0.11.1",
+    "pandas": "2.3.3",
+    "matplotlib": "3.10.7",
+    "torch": "2.8.0",
+    "transformers": "4.41.2"
+  },
+  "timing_note": "Baseline elapsed_s is batch elapsed / batch size; Ours elapsed_s is standalone wall time. Batch times are recorded separately. Loading excluded.",
+  "cached_inputs": {
+    "ours_source_directory": "/home/patton/experiment2/results/20261008_171242_543329_B",
+    "ours_predictions_sha256": "8a515f23258723c58ea5c71f5c6162fdb689716b8cc3246380276d04245e3816",
+    "ours_cached_source_hash": "96312c08920aa3439ca6aa6f664943bbf39441c8431d3a439b1a46b772634512",
+    "ours_cached_config_sha256": "8c6b90db157c463808ed4efccbb1323a24463bfab5c2b5dd5b5459f027238968",
+    "ours_source_mode": "B",
+    "ours_source_created_at": "2026-10-08T17:12:42.543329+08:00",
+    "baseline_source_directory": "/home/patton/experiment2/results/20261008_135429_267455_A",
+    "baseline_source_cache_key": "68c039d1b26d484792bee2b60b37e97561d61f83ec968aac42d01eb944fd63c5",
+    "baseline_cached_fingerprint": {
+      "protocol": {
+        "score_start_s": 5.0,
+        "delays_ms": [
+          175,
+          300
+        ],
+        "clock": "integer_microseconds",
+        "target": "query_time"
+      },
+      "selection": {
+        "sequences": [
+          "speed_seg01",
+          "speed_seg02",
+          "speed_seg03",
+          "speed_seg04",
+          "speed_seg05"
+        ],
+        "delays_ms": [
+          175,
+          300
+        ],
+        "max_queries": null
+      },
+      "dataset": {
+        "dataset": "Comma2k19 cleaned development reference trajectories",
+        "source_signal": "car_speed",
+        "unit": "m/s",
+        "sample_period_us": 25000,
+        "frequency_hz": 40,
+        "duration_s": 180,
+        "samples_per_sequence": 7201,
+        "sequences": [
+          "speed_seg01",
+          "speed_seg02",
+          "speed_seg03",
+          "speed_seg04",
+          "speed_seg05"
+        ],
+        "sha256": {
+          "speed_segments.csv": "02a7e468e84b392963269f8f781f3674ce4b24ed4a45319459009f1a68865af9",
+          "segments_manifest.csv": "caa437022ab39da4d515debcdf14c6643746348a9de93e150cb13c257bf8e6c9"
+        },
+        "note": "Cleaned, deduplicated, interpolated segments; final paper confirmation should use original Comma2k19 once."
+      },
+      "delay_profiles": {
+        "sample_period_us": 25000,
+        "score_start_s": 5,
+        "profiles": [
+          {
+            "delay_ms": 175,
+            "delay_us": 175000,
+            "delay_samples": 7
+          },
+          {
+            "delay_ms": 300,
+            "delay_us": 300000,
+            "delay_samples": 12
+          }
+        ],
+        "visibility_rule": "source_time_us + delay_us <= query_time_us"
+      },
+      "baseline_settings": {
+        "TiRex-2": {
+          "source_directory": "baselines/tirex-2",
+          "model_path": "models/tirex2",
+          "context_length": 2048,
+          "batch_size": 256,
+          "device": "cpu",
+          "num_threads": 4
+        },
+        "Chronos-2": {
+          "source_directory": "baselines/chronos-forecasting",
+          "model_path": "models/chronos2",
+          "context_length": 2048,
+          "batch_size": 128,
+          "device": "cpu",
+          "num_threads": 6
+        },
+        "Sundial": {
+          "source_directory": "baselines/Sundial",
+          "model_path": "models/sundial",
+          "context_length": 672,
+          "batch_size": 128,
+          "device": "cpu",
+          "num_threads": 6,
+          "num_samples": 20,
+          "seed": 42
+        }
+      },
+      "model_lock": {
+        "TiRex-2": {
+          "repo_id": "NX-AI/TiRex-2",
+          "revision": "30788a311699acba7e6393ad9700ea7b7cb9bb2d",
+          "local_directory": "models/tirex2",
+          "sha256": {
+            "model-config.yaml": "cddbe6d0be4919cb7b0cad747fb19a295264e129d1c0790cf62133b4cb5da727",
+            "model.ckpt": "184b160ffbe4c01a26beeba14015ff3507c7497e1f3577114187bbc1d19fcac1"
+          }
+        },
+        "Chronos-2": {
+          "repo_id": "amazon/chronos-2",
+          "revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+          "local_directory": "models/chronos2",
+          "sha256": {
+            "config.json": "ef1143bfdc9c0376d9a056eefca46cb4b1ec3d0ffacd541ff56feb40fb708031",
+            "model.safetensors": "ddcda3c7508bf2528087723e98a20707cc04b7f370ae275a9fd88078ddba4f42"
+          }
+        },
+        "Sundial": {
+          "repo_id": "thuml/sundial-base-128m",
+          "revision": "3212e42564493f520593e5414af4367fc4b49226",
+          "local_directory": "models/sundial",
+          "sha256": {
+            "config.json": "173dd40c0a7e08a71b660110fd6334ee85eb9f6ce6f30df0a6cbaea3bb1ff3b4",
+            "generation_config.json": "d90f7f1d9ef012f9ec0bd76fdf42e6979d086f157d65910b3b273edfb100e748",
+            "model.safetensors": "414435b508391f92afadd2aaeec418c806776aeccbce12e638d73a139ca5ca78",
+            "configuration_sundial.py": "1a79b4265d7a7feabb1fadc336c2c7580157ededd7cc58655f007213447eb7e4",
+            "modeling_sundial.py": "4a7ce7defa6578d0ae84593587d164afb933cfa6e52aee53f709f236b00b85e4",
+            "ts_generation_mixin.py": "789577dafbd9605d4c1b2d8930ff2861277090b004b6e7ddef6011b79444942e",
+            "flow_loss.py": "fb33d3c3988015124c9f4e05728127d85afee8b416930c0e6d5097e4ced2ecf8"
+          }
+        }
+      },
+      "dependency_versions": {
+        "numpy": "2.2.6",
+        "torch": "2.8.0",
+        "transformers": "4.41.2",
+        "accelerate": "1.11.0",
+        "flashrnn": "1.0.8",
+        "xlstm": "2.0.3",
+        "einops": "0.8.1"
+      },
+      "baseline_versions": {
+        "tirex-2": {
+          "commit": "32b6645e5f0aded2e93fd22de261bfa5de1e148c",
+          "repository": "https://github.com/NX-AI/tirex-2.git"
+        },
+        "chronos-forecasting": {
+          "commit": "1224fafa91e1ecd6674f5204066b159e40b5e4a1",
+          "repository": "https://github.com/amazon-science/chronos-forecasting.git"
+        },
+        "Sundial": {
+          "commit": "3ef03b8c3804f64a506e57101a173470040aaece",
+          "repository": "https://github.com/thuml/Sundial.git"
+        }
+      },
+      "source_hashes": {
+        "TiRex-2": "a8c746e38e58e9300724d8160b1ca99a08e7d1efe8a037b00d424bf9f0cfcaab",
+        "Chronos-2": "f7500a93069eb9630561869ebe38e6a861455fdc826d78de71475e5bda19315b",
+        "Sundial": "707d28c6fee2ebba38ecc4192147a7022ec8ad7a9fb956262e025a2659d68dd3"
+      },
+      "adapter_hash": "f16c594e146efdefe8e894f2695073050bb19a242574176330f785fc05115c8f",
+      "shared_code_hashes": {
+        "method_api.py": "899515d39fbbc8b66d1fa21b3facc1193f3eb83e1c9cb6cd7c943e7f5c276e28",
+        "dataset_api.py": "ea5b81154f515633f3f9a0a177fd1989f5fcdd341530537811eb1d3a484e09a2",
+        "replay.py": "397e5c3c6026c27b4a98521760cd5356ee5c54b5482bdac16f96fd82fee9cc07",
+        "cache.py": "0b07cc3c85c173bb76955a1e3577dc7dd2bbfaa298306b8e123e61302d4c19b5"
+      }
+    },
+    "baseline_cache_candidates_rejected": [],
+    "ours_cache_candidates_rejected": []
+  },
+  "methods_rerun": [
+    "TiRex-2"
+  ],
+  "methods_reused": [
+    "Ours",
+    "Chronos-2",
+    "Sundial"
+  ],
+  "current_baseline_cache_key": "4c37d21576134ce4d33ae2459f41ffcd861e7819681940bb1d2a7fea8fb19111",
+  "current_baseline_fingerprint": {
+    "protocol": {
+      "score_start_s": 5.0,
+      "delays_ms": [
+        175,
+        300
+      ],
+      "clock": "integer_microseconds",
+      "target": "query_time"
+    },
+    "selection": {
+      "sequences": [
+        "speed_seg01",
+        "speed_seg02",
+        "speed_seg03",
+        "speed_seg04",
+        "speed_seg05"
+      ],
+      "delays_ms": [
+        175,
+        300
+      ],
+      "max_queries": null
+    },
+    "dataset": {
+      "dataset": "Comma2k19 cleaned development reference trajectories",
+      "source_signal": "car_speed",
+      "unit": "m/s",
+      "sample_period_us": 25000,
+      "frequency_hz": 40,
+      "duration_s": 180,
+      "samples_per_sequence": 7201,
+      "sequences": [
+        "speed_seg01",
+        "speed_seg02",
+        "speed_seg03",
+        "speed_seg04",
+        "speed_seg05"
+      ],
+      "sha256": {
+        "speed_segments.csv": "02a7e468e84b392963269f8f781f3674ce4b24ed4a45319459009f1a68865af9",
+        "segments_manifest.csv": "caa437022ab39da4d515debcdf14c6643746348a9de93e150cb13c257bf8e6c9"
+      },
+      "note": "Cleaned, deduplicated, interpolated segments; final paper confirmation should use original Comma2k19 once."
+    },
+    "delay_profiles": {
+      "sample_period_us": 25000,
+      "score_start_s": 5,
+      "profiles": [
+        {
+          "delay_ms": 175,
+          "delay_us": 175000,
+          "delay_samples": 7
+        },
+        {
+          "delay_ms": 300,
+          "delay_us": 300000,
+          "delay_samples": 12
+        }
+      ],
+      "visibility_rule": "source_time_us + delay_us <= query_time_us"
+    },
+    "baseline_settings": {
+      "TiRex-2": {
+        "source_directory": "baselines/tirex-2",
+        "model_path": "models/tirex2",
+        "context_length": 2048,
+        "batch_size": 256,
+        "device": "cuda",
+        "num_threads": 4
+      },
+      "Chronos-2": {
+        "source_directory": "baselines/chronos-forecasting",
+        "model_path": "models/chronos2",
+        "context_length": 2048,
+        "batch_size": 128,
+        "device": "cpu",
+        "num_threads": 6
+      },
+      "Sundial": {
+        "source_directory": "baselines/Sundial",
+        "model_path": "models/sundial",
+        "context_length": 672,
+        "batch_size": 128,
+        "device": "cpu",
+        "num_threads": 6,
+        "num_samples": 20,
+        "seed": 42
+      }
+    },
+    "model_lock": {
+      "TiRex-2": {
+        "repo_id": "NX-AI/TiRex-2",
+        "revision": "30788a311699acba7e6393ad9700ea7b7cb9bb2d",
+        "local_directory": "models/tirex2",
+        "sha256": {
+          "model-config.yaml": "cddbe6d0be4919cb7b0cad747fb19a295264e129d1c0790cf62133b4cb5da727",
+          "model.ckpt": "184b160ffbe4c01a26beeba14015ff3507c7497e1f3577114187bbc1d19fcac1"
+        }
+      },
+      "Chronos-2": {
+        "repo_id": "amazon/chronos-2",
+        "revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+        "local_directory": "models/chronos2",
+        "sha256": {
+          "config.json": "ef1143bfdc9c0376d9a056eefca46cb4b1ec3d0ffacd541ff56feb40fb708031",
+          "model.safetensors": "ddcda3c7508bf2528087723e98a20707cc04b7f370ae275a9fd88078ddba4f42"
+        }
+      },
+      "Sundial": {
+        "repo_id": "thuml/sundial-base-128m",
+        "revision": "3212e42564493f520593e5414af4367fc4b49226",
+        "local_directory": "models/sundial",
+        "sha256": {
+          "config.json": "173dd40c0a7e08a71b660110fd6334ee85eb9f6ce6f30df0a6cbaea3bb1ff3b4",
+          "generation_config.json": "d90f7f1d9ef012f9ec0bd76fdf42e6979d086f157d65910b3b273edfb100e748",
+          "model.safetensors": "414435b508391f92afadd2aaeec418c806776aeccbce12e638d73a139ca5ca78",
+          "configuration_sundial.py": "1a79b4265d7a7feabb1fadc336c2c7580157ededd7cc58655f007213447eb7e4",
+          "modeling_sundial.py": "4a7ce7defa6578d0ae84593587d164afb933cfa6e52aee53f709f236b00b85e4",
+          "ts_generation_mixin.py": "789577dafbd9605d4c1b2d8930ff2861277090b004b6e7ddef6011b79444942e",
+          "flow_loss.py": "fb33d3c3988015124c9f4e05728127d85afee8b416930c0e6d5097e4ced2ecf8"
+        }
+      }
+    },
+    "dependency_versions": {
+      "numpy": "2.2.6",
+      "torch": "2.8.0",
+      "transformers": "4.41.2",
+      "accelerate": "1.11.0",
+      "flashrnn": "1.0.8",
+      "xlstm": "2.0.3",
+      "einops": "0.8.1"
+    },
+    "baseline_versions": {
+      "tirex-2": {
+        "commit": "32b6645e5f0aded2e93fd22de261bfa5de1e148c",
+        "repository": "https://github.com/NX-AI/tirex-2.git"
+      },
+      "chronos-forecasting": {
+        "commit": "1224fafa91e1ecd6674f5204066b159e40b5e4a1",
+        "repository": "https://github.com/amazon-science/chronos-forecasting.git"
+      },
+      "Sundial": {
+        "commit": "3ef03b8c3804f64a506e57101a173470040aaece",
+        "repository": "https://github.com/thuml/Sundial.git"
+      }
+    },
+    "source_hashes": {
+      "TiRex-2": "a8c746e38e58e9300724d8160b1ca99a08e7d1efe8a037b00d424bf9f0cfcaab",
+      "Chronos-2": "f7500a93069eb9630561869ebe38e6a861455fdc826d78de71475e5bda19315b",
+      "Sundial": "707d28c6fee2ebba38ecc4192147a7022ec8ad7a9fb956262e025a2659d68dd3"
+    },
+    "adapter_hash": "43fb4d3bd2ce6a00e0164f2ad946f77edc309b1d72bc008e8c8f3e4d33c74540",
+    "shared_code_hashes": {
+      "method_api.py": "899515d39fbbc8b66d1fa21b3facc1193f3eb83e1c9cb6cd7c943e7f5c276e28",
+      "dataset_api.py": "ea5b81154f515633f3f9a0a177fd1989f5fcdd341530537811eb1d3a484e09a2",
+      "replay.py": "397e5c3c6026c27b4a98521760cd5356ee5c54b5482bdac16f96fd82fee9cc07",
+      "cache.py": "0b07cc3c85c173bb76955a1e3577dc7dd2bbfaa298306b8e123e61302d4c19b5"
+    }
+  }
+}

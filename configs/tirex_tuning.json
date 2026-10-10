@@ -1,0 +1,9 @@
+{
+  "source_directory": "TiRex",
+  "context_length": 256,
+  "pad_context": true,
+  "tta_diff": true,
+  "trend_window_points": 32,
+  "trend_threshold": 1.5,
+  "trend_min_r2": 0.6
+}

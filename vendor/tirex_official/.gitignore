@@ -1,0 +1,20 @@
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+**/__pycache__/
+output/
+**/output/
+.zed/
+*.egg-info
+/model/
+*.csv
+build/
+dist/
+/site/
+
+.ipynb_checkpoints/
+.idea/
+/venv
+
+.DS_Store

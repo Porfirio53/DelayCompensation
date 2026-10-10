@@ -1,0 +1,9 @@
+{
+  "source_directory": "baselines/tirex-2",
+  "context_length": 2048,
+  "pad_context": true,
+  "tta_diff": true,
+  "trend_window_points": null,
+  "trend_threshold": 1.5,
+  "trend_min_r2": 0.87
+}

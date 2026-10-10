@@ -1,0 +1,17 @@
+/.venv*/
+/.cache/
+/.vscode/
+/data/
+/models/
+/outputs/
+/references/**/*.csv
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.DS_Store
+

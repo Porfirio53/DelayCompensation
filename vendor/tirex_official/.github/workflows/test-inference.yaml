@@ -1,0 +1,49 @@
+name: Run Inference Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  inference-tests:
+    runs-on: ubuntu-latest
+    env:
+      # Local Broker
+      TEST_MQTT_BROKER_HOST: localhost
+      TEST_MQTT_BROKER_PORT: "1883"
+    services:
+      mqtt:
+        image: emqx/emqx:5.10.4
+        ports:
+          - 1883:1883
+        options: >-
+          --health-cmd "emqx ctl status"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 10s
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          # cache: 'pip' # Caching didn't make the CI faster and cache is quite big (4GB)
+
+      - name: Install inference dependencies
+        working-directory: ./inference
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Run static inference checks
+        working-directory: ./inference
+        run: python -m compileall app tests
+
+      - name: Run inference tests
+        working-directory: ./inference
+        run: pytest tests -s

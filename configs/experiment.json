@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "dataset": "regression_speed_v1",
+  "protocol": {
+    "score_start_s": 5.0,
+    "delays_ms": [
+      175,
+      300
+    ],
+    "clock": "integer_microseconds",
+    "target": "query_time"
+  },
+  "runtime": {
+    "device": "cuda",
+    "batch_size": 256,
+    "num_threads": 4,
+    "seed": 42
+  },
+  "tuning_config": "configs/tirex_tuning.json",
+  "official_config": "configs/tirex_official.json"
+}

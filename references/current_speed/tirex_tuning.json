@@ -1,0 +1,22 @@
+{
+  "config_path": "/home/patton/experiment2/configs/tirex_tuning.json",
+  "config_sha256": "767dd37ad49cdfd93b9f6f43539b3301e1dda639dfabbe821c55e97bd3fd8c4e",
+  "settings": {
+    "source_directory": "TiRex",
+    "context_length": 256,
+    "pad_context": true,
+    "tta_diff": true,
+    "trend_window_points": 32,
+    "trend_threshold": 1.5,
+    "trend_min_r2": 0.6
+  },
+  "source_directory": "TiRex",
+  "source_sha256": "54cd32d1ae8baf53c883cd5f11e9e610c308643d1e2fc8a92cbddcc14ffb8cc3",
+  "integration_sha256": {
+    "tirex_tuning.py": "dff944585173aef89f98cd672a5d33b7696f2c667090b51761bb91fe6e023809",
+    "tirex_tuning_runner.py": "bc4a1eeea09d52e897eff47686715e9558e09323659201393b5d1050ab128b2f",
+    "tirex_reference.py": "da8c5aaa3beffc466b89f06f7d32d760d57cc0a34f716604223d75f92afbfae3",
+    "tirex_diagnostics.py": "ddd843f6b557e3799b34a0a5003f00deedcc2a4edffd1ed7b42a53a70c92cff0"
+  },
+  "training": "none; shared, unchanged models/tirex2 checkpoint"
+}

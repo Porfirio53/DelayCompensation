@@ -1,0 +1,89 @@
+# TiRex-2
+
+**Generalizing TiRex to Multivariate Data and Streaming**
+
+[![Paper](https://img.shields.io/static/v1?label=Paper&message=2607.01204&color=B31B1B&logo=arXiv)](https://arxiv.org/abs/2607.01204)
+[![Hugging Face](https://img.shields.io/badge/HuggingFace-TiRex--2-yellow?logo=huggingface)](https://huggingface.co/NX-AI/TiRex-2)
+[![GitHub](https://img.shields.io/badge/GitHub-NX--AI%2Ftirex--2-181717?logo=github)](https://github.com/NX-AI/tirex-2)
+[![PyPI](https://img.shields.io/pypi/v/tirex-2?color=blue)](https://pypi.org/project/tirex-2/)
+[![Docker](https://img.shields.io/badge/GHCR-tirex2--cpu%20%2F%20tirex2--gpu-2496ED?logo=docker&logoColor=white)](https://github.com/NX-AI/tirex-2/pkgs/container/tirex2-cpu)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/NX-AI/tirex-2/blob/main/examples/getting_started.ipynb)
+[![TiRex-2 Demo](https://img.shields.io/badge/HuggingFace-TiRex--2%20Demo-yellow?logo=huggingface)](https://huggingface.co/spaces/NX-AI/TiRex-2-demo)
+
+!!! note "🎉 News (Sep 2026)"
+    TiRex-2 has been accepted as an **Oral** presentation (0.36%) at **NeurIPS 2026**!
+
+TiRex-2 is a **pretrained time series foundation model** that forecasts one or many target
+variates directly from their history, optionally conditioned on past and future-known
+covariates. A single checkpoint serves both univariate and multivariate forecasting, built
+on a recurrent architecture designed for efficient streaming settings — all zero-shot, with
+no task-specific training or fine-tuning.
+
+TiRex-2 generalizes the original univariate model, [TiRex](https://github.com/NX-AI/tirex), to
+multivariate forecasting with past and future covariates. See the [Introduction](introduction.md)
+for background and the [paper](https://arxiv.org/pdf/2607.01204) for details.
+
+!!! info "Looking for TiRex-1?"
+    This site documents **TiRex-2**. Documentation for the original univariate TiRex model
+    lives at [nx-ai.github.io/tirex](https://nx-ai.github.io/tirex/) — the two are separate
+    projects and this site does not attempt to unify them.
+
+## Key facts
+
+- **Zero-shot multivariate forecasting** — TiRex-2 forecasts multiple target variates out of
+  the box, without training or fine-tuning on your data.
+- **Past and future-known covariates** — TiRex-2 natively conditions on past covariates and
+  future-known covariates, such as calendar features, holidays, promotions, or scheduled
+  interventions.
+- **Small active footprint** — TiRex-2 activates 38.4M parameters in univariate mode and an
+  additional 44.1M parameters for multivariate forecasting.
+
+## Where to go next
+
+- [Installation](getting-started/install.md) — `pip install tirex-2`, Pixi setup, and gated
+  Hugging Face weight access.
+- [Quickstart](getting-started/quickstart.md) — minimal sine-wave and covariate examples.
+- [How-to guides](how-to/forecasting.md) — univariate/multivariate forecasting, covariates in
+  depth, and what streaming does (and doesn't) mean in this open-source release.
+- [Deployment](deployment.md) — the Docker-based HTTP/MQTT/MCP inference server.
+- [API reference](api/index.md) — generated reference for the public `tirex2` API.
+
+## TiRex-2 PRO
+
+This repository contains NXAI's open-source release of TiRex-2. TiRex-2 PRO extends it with:
+
+- **Support**: dedicated support and engagement from NXAI.
+- **Streaming**: incremental forecast updates as new observations arrive, without recomputing
+  forecasts over the full history.
+- **Speed**: optimized inference, including hardware-specific optimizations for edge,
+  embedded, and industrial PC deployments.
+- **Fine-tuning**: models adapted to your data or pretrained on different datasets for
+  improved performance.
+- **Classification & Regression**: TiRex-2 adapted for classification and regression tasks.
+
+See [TiRex-2 PRO](pro.md) for the full feature comparison, or contact
+[contact@nx-ai.com](mailto:contact@nx-ai.com).
+
+## Cite Our Work
+
+If you use TiRex-2 in your research, please cite our work:
+
+```bibtex
+@misc{podest2026tirex2generalizingtirexmultivariate,
+      title={TiRex-2: Generalizing TiRex to Multivariate Data and Streaming},
+      author={Patrick Podest and Marco Pichler and Elias Bürger and Levente Zólyomi and Bernhard Voggenberger and Wilhelm Berghammer and Daniel Klotz and Sebastian Böck and Günter Klambauer and Sepp Hochreiter},
+      year={2026},
+      eprint={2607.01204},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2607.01204},
+}
+```
+
+## Intended use and limitations
+
+This release supports time-series forecasting as documented on this site. High-risk applications under EU AI Act Article 6 are outside NXAI's intended purpose. NXAI has not validated this release for high-risk compliance. Users and integrators must assess suitability and meet their legal obligations. Unlawful uses, including those prohibited by EU AI Act Article 5, are not permitted. See the [Intended Use Notice](intended-use.md) for details. It does not change the licence or statutory obligations.
+
+## License
+
+TiRex-2 is licensed under the [Apache License 2.0](https://github.com/NX-AI/tirex-2/blob/main/LICENSE).

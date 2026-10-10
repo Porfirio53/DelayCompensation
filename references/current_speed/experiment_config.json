@@ -1,0 +1,50 @@
+{
+  "dataset": {
+    "directory": "data/comma2k19"
+  },
+  "protocol": {
+    "score_start_s": 5.0,
+    "delays_ms": [
+      175,
+      300
+    ],
+    "clock": "integer_microseconds",
+    "target": "query_time"
+  },
+  "ours": {
+    "config_path": "Ours/configs/fixed.json"
+  },
+  "baselines": {
+    "TiRex-2": {
+      "source_directory": "TiRex",
+      "model_path": "models/tirex2",
+      "context_length": 256,
+      "batch_size": 256,
+      "device": "cuda",
+      "num_threads": 4,
+      "pad_context": true,
+      "tta_diff": true,
+      "trend_window_points": 32,
+      "trend_threshold": 1.5,
+      "trend_min_r2": 0.6
+    },
+    "Chronos-2": {
+      "source_directory": "baselines/chronos-forecasting",
+      "model_path": "models/chronos2",
+      "context_length": 2048,
+      "batch_size": 128,
+      "device": "cpu",
+      "num_threads": 6
+    },
+    "Sundial": {
+      "source_directory": "baselines/Sundial",
+      "model_path": "models/sundial",
+      "context_length": 672,
+      "batch_size": 128,
+      "device": "cpu",
+      "num_threads": 6,
+      "num_samples": 20,
+      "seed": 42
+    }
+  }
+}
