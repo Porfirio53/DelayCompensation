@@ -18,6 +18,7 @@ from .arrival import ReceiverView, causal_filled_context
 from .common import (assert_local_imports, current_source, project_path, read_json,
                      require_current_source, source_hash, verify_files)
 from .gpu import cache_snapshot, configure_runtime
+from .timing import horizon_steps, integer_us
 
 
 def read_tuning(root: Path, path: str | Path, source: str = "current") -> dict:
@@ -92,6 +93,29 @@ class ForecastTrajectory:
         values = np.r_[last_observation_mps, self.values_mps[int(median[0])]]
         grid = np.arange(len(values), dtype=np.float64) * self.sample_period_us
         return float(np.interp(source_offset_us, grid, values))
+
+
+def observation_horizon(view: ReceiverView, *, conservative: bool = True,
+                        extra_delivery_us: float = 0.0, margin_steps: int = 0) -> int:
+    """Cover measured observation age plus receiver-side queue/compute time."""
+    if not np.isfinite(extra_delivery_us) or extra_delivery_us < 0:
+        raise ValueError("Additional delivery time must be finite and nonnegative")
+    integer_us(margin_steps, "margin_steps")
+    if not view.ready:
+        raise ValueError(f"Receiver observation is unavailable: {view.reason}")
+    timing = view.timing
+    if timing is None:
+        offset = view.query_time_us - int(view.source_time_us[-1]) + extra_delivery_us
+    else:
+        if not timing.valid:
+            raise ValueError(f"Observation timing is unavailable: {timing.reason}")
+        if conservative:
+            clock = timing.clock
+            minimum_rate = clock.rate if clock.exact else 1.0 - clock.max_relative_drift_ppm * 1e-6
+            offset = (max(0.0, timing.age_upper_us) + extra_delivery_us) / minimum_rate
+        else:
+            offset = timing.source_offset_us + extra_delivery_us / timing.clock.rate
+    return max(1, horizon_steps(offset, view.sample_period_us) + margin_steps)
 
 
 class TiRexModel:
@@ -284,17 +308,12 @@ class TiRexModel:
     def forecast(self, view: ReceiverView, prediction_length: int) -> ForecastTrajectory:
         return self.forecast_batch([view], prediction_length)[0]
 
-    def forecast_observation(self, view: ReceiverView, *, conservative: bool = True) -> ForecastTrajectory:
-        """Generate a query-time trajectory using measured AoI and its uncertainty."""
-        if view.timing is None:
-            length = view.horizon_steps
-        else:
-            if not view.timing.valid:
-                raise ValueError(f"Observation timing is unavailable: {view.timing.reason}")
-            length = view.timing.upper_horizon_steps if conservative else view.timing.horizon_steps
-        if length is None or not view.ready:
-            raise ValueError(f"Receiver observation is unavailable: {view.reason}")
-        return self.forecast(view, max(1, int(length)))
+    def forecast_observation(self, view: ReceiverView, *, conservative: bool = True,
+                             extra_delivery_us: float = 0.0, margin_steps: int = 0) -> ForecastTrajectory:
+        """Cover AoI and, when supplied, estimated queue/compute delay."""
+        length = observation_horizon(view, conservative=conservative,
+                                     extra_delivery_us=extra_delivery_us, margin_steps=margin_steps)
+        return self.forecast(view, length)
 
     def metadata(self) -> dict:
         return {"source": self.source, "source_directory": str(self.source_directory),

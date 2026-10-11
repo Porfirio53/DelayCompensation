@@ -1,6 +1,6 @@
 # MyTirex
 
-面向动态通信与计算延迟的 TiRex-2 在线车辆状态预测补偿研究工程。提供 Comma2k19 speed 因果回放、离线本地模型加载、真实 GPU 单请求测量，以及四时间戳同步、动态观测年龄和时间测量误差实验。第一步实现与运行命令见 [AoI 指南](docs/aoi.md)，后续工作见 [实施路线](docs/roadmap.md)。
+面向动态通信与计算延迟的 TiRex-2 在线车辆状态预测补偿研究工程。提供 Comma2k19 speed 因果回放、离线本地模型加载、真实 GPU 单请求测量，以及四时间戳同步、动态观测年龄和交付时刻补偿。第一步见 [AoI 指南](docs/aoi.md)，第二步见 [计算时延补偿](docs/delivery.md)，后续工作见 [总方案](docs/总方案.md)。
 
 开发、测试和日常评估只使用 `vendor/tirex/` 当前版。模型使用权限与后续工作约束见 [AGENTS.md](AGENTS.md)。时间测量验收默认不加载模型。
 
@@ -102,6 +102,18 @@ cd ~/MyTirex
 默认从 `speed_seg01` 的第 1200 个查询（30 秒）开始逐个调用，后续使用连续查询；可调整 `--sequence`、`--query-index`。计时包括接收历史复制、输入校验/截取/转换、模型调用、GPU 完成、CPU 轨迹取回和目标点选值，每次请求前后等待 GPU。入口只接受 batch=1。
 
 `benchmark.csv` 保留每个样本；`metadata.json` 分开记录加载、第一请求（可能编译）、预热和稳定运行阶段，给出稳定样本数、P50/P95/P99 和峰值显存。已有磁盘缓存时，第一请求仍可能涉及 tracing、缓存加载或新形状的编译，不能将全部首请求耗时称为 nvcc 冷编译。32 样本尾部分位数只用于部署检查；正式尾延迟使用至少 1000 个稳定请求。此入口测模型请求端到端耗时，尚未加入在线排队、真实时钟同步或连续发布。
+
+## 计算时延补偿
+
+`eval-aoi --with-model --delivery` 以 batch=1 运行短轨迹，按实际 GPU 完成与 CPU 轨迹返回时刻重新选值，同时比较调用时刻与交付时刻误差。计算耗时初值为 17 ms，后续用 EWMA 更新，预测长度另留一个 25 ms 网格步余量。以下命令由使用者手动运行：
+
+```bash
+.venv/bin/python -m mytirex eval-aoi --with-model --delivery \
+  --max-series 1 --max-queries 32 \
+  --profile fixed_175 --profile fixed_300 --scenario shared_clock_control
+```
+
+结果保存在独立 `outputs/<时间>_delivery_current/`，成功指针为 `outputs/latest_delivery.json`；报告包含本轮实际计算耗时 P50/P95/P99、两种选值的交付误差和覆盖率。参数、时间域及 40 Hz 参考值的分辨率限制见 [计算时延补偿指南](docs/delivery.md)。
 
 ## 数据与接口
 

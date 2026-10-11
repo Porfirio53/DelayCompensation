@@ -68,6 +68,12 @@ def main(argv=None) -> int:
     aoi.add_argument("--replicates", type=positive)
     aoi.add_argument("--batch-size", type=positive)
     aoi.add_argument("--with-model", action="store_true", help="Also run local TiRex and score speed; otherwise measure timing only")
+    aoi.add_argument("--delivery", action="store_true",
+                     help="With --with-model: batch=1 short trajectories and paired delivery-time scoring")
+    aoi.add_argument("--compute-estimate-ms", type=positive_seconds, default=17.0,
+                     help="Initial compute estimate for --delivery, in ms; updated by EWMA (default: 17)")
+    aoi.add_argument("--warmup", type=positive, default=5,
+                     help="Unscored startup requests for --delivery (default: 5; first excluded from EWMA)")
     measurement = argparse.ArgumentParser(add_help=False, parents=[roots])
     source = commands.add_parser("sync-source", parents=[roots], help="Serve real four-timestamp UDP sync and replay an existing CAN block")
     source.add_argument("--bind", default="127.0.0.1")

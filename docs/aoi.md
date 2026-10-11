@@ -2,7 +2,7 @@
 
 本阶段对应 [总方案](总方案.md) 的第一步：把预设的 175/300 ms 延迟扩展为接收端实时测得的观测年龄。实现包括应用层四时间戳同步、两个单调时钟之间的偏移／漂移估计、实际收到的源历史、查询时刻动态 AoI、时间误差区间，以及可独立运行的受控实验和 UDP 实机采集。
 
-代码已做单元测试、localhost UDP 采集／重放和少量真实 GPU 功能检查；记录见 [verification.md](verification.md)。正式数据评估及双设备网络实验由使用者运行。本阶段的速度目标是查询时刻 `q`；计算耗时与交付时刻补偿按方案下一步推进。
+代码已做单元测试、localhost UDP 采集／重放和少量真实 GPU 功能检查；记录见 [verification.md](verification.md)。正式数据评估及双设备网络实验由使用者运行。默认速度目标是查询时刻 `q`；第二步的可选 `--delivery` 模式加入计算耗时与交付时刻补偿，运行说明见 [delivery.md](delivery.md)。
 
 2026-10-11 已复核使用者完成的时间测量与当前版 GPU 全量 validation；结果、限制和配置记录见 [aoi_validation.md](aoi_validation.md)。需要追加 held-out 时间评估时使用 [aoi_frozen.json](../configs/aoi_frozen.json)，该文件与验证过的时间配置逐字节相同。模型使用限制见 [AGENTS.md](../AGENTS.md)。
 

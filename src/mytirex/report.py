@@ -210,3 +210,44 @@ def write_aoi_report(output: Path, summary: pd.DataFrame, metadata: dict, exampl
              "<a href='config.json'>配置</a> · <a href='metadata.json'>数据与源码身份</a></p>")
     (output / "report.html").write_text(_page("动态观测年龄与时钟误差实验", body), encoding="utf-8")
 
+
+def write_delivery_report(output: Path, summary: pd.DataFrame, metadata: dict, example: pd.DataFrame) -> None:
+    labels = {"arrival_profile": "网络场景", "clock_scenario": "时钟场景", "policy": "选值方法",
+        "query_count": "查询数", "speed_mps_count": "交付评分数",
+        "start_speed_mps_MAE": "调用时刻 MAE (m/s)", "speed_mps_MAE": "交付时刻 MAE (m/s)",
+        "speed_mps_abs_P95": "交付误差 P95 (m/s)", "speed_mps_abs_P99": "交付误差 P99 (m/s)",
+        "compute_ms_P50": "计算 P50 (ms)", "compute_ms_P95": "计算 P95 (ms)", "compute_ms_P99": "计算 P99 (ms)",
+        "delivery_coverage": "交付轨迹覆盖率", "fallback_count": "回退数"}
+    body = (f"<p>因果 CAN {metadata['selection']['split']} 集；{metadata['case_count']} 个查询，"
+            f"{metadata['unit_count']} 个序列/网络/时钟/重复组合；当前版 TiRex，batch=1。</p>"
+            "<p class='note'>每份历史只运行一次短轨迹推理，两种方法在相同实际交付时刻评分。"
+            "aoi_only 仍使用调用时刻选值；compute_compensated 按真实计算耗时重新选值。"
+            "轨迹长度由测得的 AoI 上界、计算耗时 EWMA 和一个网格步余量确定；排队时间为 0。"
+            "启动预热不计入误差或耗时分位数。交付参考采用 40 Hz 因果 ZOH，块结束后的目标不评分。</p>")
+    if not example.empty:
+        compensated = example[example.policy == "compute_compensated"].sort_values("query_time_us")
+        baseline = example[example.policy == "aoi_only"].sort_values("query_time_us")
+        destination = output / "plots"
+        destination.mkdir()
+        x = (compensated.query_time_us.to_numpy() - int(compensated.query_time_us.iloc[0])) / 1e6
+        fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+        axes[0].plot(x, numeric_column(compensated, "compute_us") / 1000, label="Actual compute")
+        axes[0].plot(x, numeric_column(compensated, "compute_estimate_us") / 1000, label="Prior EWMA estimate")
+        axes[0].set_ylabel("Compute time (ms)")
+        for frame, label in ((baseline, "AoI only at delivery"), (compensated, "Compensated at delivery")):
+            axes[1].plot(x, numeric_column(frame, "prediction") - numeric_column(frame, "reference"), label=label)
+        axes[1].set_ylabel("Delivery speed error (m/s)")
+        axes[1].set_xlabel("Elapsed query time (s)")
+        for axis in axes:
+            axis.grid(alpha=.2)
+            axis.legend(loc="best")
+        fig.tight_layout()
+        _save(fig, destination, "delivery_trace.png")
+        body += "<img src='plots/delivery_trace.png' alt='Compute latency and paired delivery errors'>"
+    body += summary[list(labels)].rename(columns=labels).to_html(
+        index=False, escape=True, float_format=lambda value: f"{value:.6g}")
+    body += ("<p><a href='aoi_queries.csv'>逐请求预测、耗时与时间戳</a> · "
+             "<a href='metrics_summary.csv'>汇总指标</a> · <a href='metrics_by_series.csv'>分序列指标</a> · "
+             "<a href='config.json'>配置</a> · <a href='metadata.json'>运行信息与预热耗时</a></p>")
+    (output / "report.html").write_text(_page("计算时延补偿与交付时刻误差", body), encoding="utf-8")
+

@@ -1,4 +1,4 @@
-"""Query-time AoI experiments on the frozen causal CAN corpus, with optional GPU scoring."""
+"""AoI experiments with optional query-time or batch=1 delivery-time GPU scoring."""
 from collections import Counter
 from dataclasses import dataclass, replace
 from itertools import islice
@@ -15,7 +15,9 @@ from .aoi_simulation import ClockScenario, TimingCase, timing_cases
 from .common import (atomic_json, dependency_versions, fingerprint, integration_identity, new_output,
                      project_path, publish_success, read_json, require_current_source, sha256, source_hash)
 from .evaluation import resolved_config
-from .model import TiRexModel
+from .delivery import (DELIVERY_POLICIES, ComputeLatencyEstimator, DeliveryAccumulator,
+                       evaluate_delivery_case, warmup_delivery)
+from .model import TiRexModel, observation_horizon
 from .prepared import PreparedCorpus, verify_prepared
 from .receiver import TimingConfig
 from .timing import ClockConfig, horizon_steps, integer_us
@@ -176,6 +178,11 @@ def evaluate_chunk(cases: list[TimingCase], *, model, target_for, maximum_steps:
 
 def eval_aoi(root: Path, args) -> Path:
     require_current_source(args.source)
+    delivery = getattr(args, "delivery", False)
+    if delivery and not args.with_model:
+        raise ValueError("--delivery requires --with-model")
+    if delivery and args.batch_size not in (None, 1):
+        raise ValueError("--delivery measures individual requests; use --batch-size 1")
     started = perf_counter()
     config = load_aoi_config(root, args.aoi_config)
     split = args.split or config["split"]
@@ -198,18 +205,26 @@ def eval_aoi(root: Path, args) -> Path:
         raise ValueError("No prepared series in the selected split")
     query_stride = args.query_stride or config["query_stride"]
     replicates = args.replicates or config["replicates"]
-    resolved = resolved_config(root, args)
+    resolved = resolved_config(root, args, batch_size=1 if delivery else None)
+    policies = DELIVERY_POLICIES if delivery else POLICIES
     selection = {"split": split, "series_ids": args.series_id, "max_series": args.max_series,
         "max_queries_per_unit": args.max_queries, "profiles": selected_profiles, "scenarios": selected_scenarios,
         "query_stride": query_stride, "replicates": replicates, "with_model": args.with_model}
+    selection["delivery"] = delivery
+    if delivery:
+        selection.update({"compute_estimate_ms": args.compute_estimate_ms, "warmup": args.warmup,
+                          "queue_us": 0, "coverage_margin_steps": 1, "compute_ewma_alpha": 0.2})
     settings = {"aoi": config, "selection": selection, "model_configuration": resolved,
         "aoi_config_sha256": sha256(project_path(root, args.aoi_config)),
-        "dataset_id": corpus.manifest["dataset_id"], "dataset_directory": str(corpus_path), "policies": list(POLICIES)}
-    output = new_output(root, "aoi_" + (args.source if args.with_model else "timing"))
+        "dataset_id": corpus.manifest["dataset_id"], "dataset_directory": str(corpus_path), "policies": list(policies)}
+    output = new_output(root, ("delivery_" if delivery else "aoi_") + (args.source if args.with_model else "timing"))
     atomic_json(output / "config.json", settings)
     integration = integration_identity(root)
-    summary = AoiAccumulator()
-    by_series = AoiAccumulator(("source", "series_id", "route", "group", "replicate", "arrival_profile", "clock_scenario", "policy"))
+    accumulator = DeliveryAccumulator if delivery else AoiAccumulator
+    summary = accumulator()
+    by_series = accumulator(("source", "series_id", "route", "group", "replicate", "arrival_profile", "clock_scenario", "policy"))
+    estimator = ComputeLatencyEstimator(args.compute_estimate_ms * 1000) if delivery else None
+    warmup_metadata = None
     rows_written = cases_written = units = 0
     outcomes = Counter()
     example = []
@@ -220,7 +235,8 @@ def eval_aoi(root: Path, args) -> Path:
     try:
         if args.with_model:
             model = TiRexModel(root, resolved["settings"], resolved["runtime"], args.source)
-            print(f"Loading {args.source} TiRex for query-time AoI controls; output={output}", flush=True)
+            scoring = "delivery-time compensation" if delivery else "query-time AoI controls"
+            print(f"Loading {args.source} TiRex for {scoring}; output={output}", flush=True)
             model.load()
         batch_size = model.batch_size if model is not None else (args.batch_size or 256)
         with (output / "aoi_queries.csv").open("w", newline="", encoding="utf-8") as stream:
@@ -247,9 +263,28 @@ def eval_aoi(root: Path, args) -> Path:
                                 query_stride=query_stride, max_queries=args.max_queries)
                             unit_queries = 0
                             batch_index = 0
+                            source_rate = 1.0 + scenario.relative_rate_ppm * 1e-6
+                            def delivery_reference(index: int, elapsed_us: int) -> float:
+                                target = int(series.source_time_us[index]) + elapsed_us / source_rate
+                                if target > int(series.source_time_us[-1]) + 1e-6:
+                                    return float("nan")
+                                position = int(np.searchsorted(series.source_time_us, target + 1e-6, side="right")) - 1
+                                return float(series.speed_mps[position])
                             while chunk := list(islice(iterator, batch_size)):
-                                frame = evaluate_chunk(chunk, model=model, target_for=lambda i: series.speed_mps[i],
-                                    maximum_steps=config["maximum_prediction_steps"], batch_id=f"{unit_id}/{batch_index}")
+                                if delivery:
+                                    case = chunk[0]
+                                    if (warmup_metadata is None and case.view.ready and
+                                            observation_horizon(case.view, extra_delivery_us=estimator.estimate_us,
+                                                margin_steps=1) <= config["maximum_prediction_steps"]):
+                                        print(f"Prewarming {args.warmup} unscored delivery requests (first may compile kernels)", flush=True)
+                                        warmup_metadata = warmup_delivery(model, case.view, estimator, args.warmup)
+                                        model.reset_for_trace(identity["series_id"], profile_name, scenario_name, replicate)
+                                    frame = evaluate_delivery_case(case, model=model, estimator=estimator,
+                                        target_for=delivery_reference, maximum_steps=config["maximum_prediction_steps"],
+                                        batch_id=f"{unit_id}/{batch_index}", source_rate=source_rate)
+                                else:
+                                    frame = evaluate_chunk(chunk, model=model, target_for=lambda i: series.speed_mps[i],
+                                        maximum_steps=config["maximum_prediction_steps"], batch_id=f"{unit_id}/{batch_index}")
                                 for name, value in identity.items():
                                     frame[name] = value
                                 if model is not None and not initial_batch_checked and (frame.batch_size > 0).any():
@@ -291,29 +326,43 @@ def eval_aoi(root: Path, args) -> Path:
         if model is not None and source_hash(model.source_directory) != model.source_sha256:
             raise RuntimeError("TiRex source changed during the AoI run")
         verify_prepared(corpus_path)
-        metadata = {"status": "success", "kind": "eval-aoi", "selection": selection,
+        metadata = {"status": "success", "kind": "eval-aoi-delivery" if delivery else "eval-aoi", "selection": selection,
             "case_count": cases_written, "row_count": rows_written, "unit_count": units,
             "status_counts": dict(outcomes), "dataset_id": corpus.manifest["dataset_id"],
             "dataset_manifest_sha256": sha256(corpus_path / "dataset_manifest.json"),
             "dataset_reference": "causal ZOH CAN speed; frozen vehicle/recording-day splits; legacy quarantine preserved",
-            "scoring_clock": "query time; queue, GPU and delivery delay are not added to the target",
+            "scoring_clock": ("replay query time + measured batch=1 CPU trajectory readiness latency; queue=0; paired methods share delivery time"
+                if delivery else "query time; queue, GPU and delivery delay are not added to the target"),
             "clock_measurement": "controlled simulated clocks and four timestamps; not a real-network evaluation",
             "clock_bounds": "nonnegative paths, configured maximum relative frequency and timestamp errors; asymmetric path point bias remains observable",
             "effective_scenario_error_bounds": {name: dict(zip(("sync_timestamp_error_us", "source_timestamp_error_us"),
                 available_scenarios[name].error_bounds(ClockConfig(**config["clock"]), TimingConfig(**config["timing"]))))
                 for name in selected_scenarios},
             "model_inference": bool(model), "model": model.metadata() if model is not None else None,
-            "receiver_context_points": config["context_length"], "policies": list(POLICIES),
+            "receiver_context_points": config["context_length"], "policies": list(policies),
             "effective_model_context_points": min(config["context_length"], resolved["settings"]["context_length"]) if model is not None else None,
-            "trajectory_policy": "one trajectory per received history; configured coverage cap sets length without oracle timing; controls select the median with observed-anchor interpolation; no extrapolation",
+            "trajectory_policy": ("one shared short trajectory per history; measured AoI upper bound + EWMA compute estimate + one grid-step margin; actual completion determines compensated median selection"
+                if delivery else "one trajectory per received history; configured coverage cap sets length without oracle timing; controls select the median with observed-anchor interpolation; no extrapolation"),
             "fallback_policy": "hold last finite received observation and retain scoring; no observation yields missing prediction",
             "truth_attached_after_inference": True, "historical_fixed_references_used": False,
             "integration": integration, "dependencies": dependency_versions(), "executable": sys.executable,
             "wall_time_s": perf_counter() - started}
+        if delivery:
+            metadata["delivery"] = {"warmup": warmup_metadata,
+                "initial_compute_estimate_ms": args.compute_estimate_ms,
+                "final_compute_estimate_ms": estimator.estimate_us / 1000,
+                "compute_ewma_alpha": 0.2, "coverage_margin_steps": 1, "queue_us": 0,
+                "timer": "perf_counter_ns; horizon planning, input preparation, synchronized forecast and CPU trajectory return; receiver/event replay and value selection excluded",
+                "reference": "previous-sample ZOH on the frozen 40 Hz corpus; no interpolation of future truth; targets past the series end are unscored",
+                "comparison": "paired time selection on one current-model trajectory, with identical history and delivery timestamp"}
         atomic_json(output / "metadata.json", metadata)
-        from .report import write_aoi_report
-        write_aoi_report(output, tables, metadata, pd.DataFrame(example))
-        publish_success(root, output, "aoi")
+        if delivery:
+            from .report import write_delivery_report
+            write_delivery_report(output, tables, metadata, pd.DataFrame(example))
+        else:
+            from .report import write_aoi_report
+            write_aoi_report(output, tables, metadata, pd.DataFrame(example))
+        publish_success(root, output, "delivery" if delivery else "aoi")
         print(f"AoI complete: {output / 'report.html'}", flush=True)
         return output
     except Exception as exc:
