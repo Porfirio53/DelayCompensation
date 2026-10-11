@@ -71,6 +71,11 @@ class TimestampedReceiver:
     def buffered_packets(self) -> int:
         return len(self._packets)
 
+    @property
+    def revision(self) -> int:
+        """Accepted history changes, including late packets filling a hole."""
+        return self.received - self.duplicates - self.too_old
+
     def ingest(self, packet: TimestampedPacket, received_at_us: int) -> bool:
         receipt = integer_us(received_at_us, "received_at_us")
         if packet.source_clock_id != self.source_clock_id:

@@ -54,6 +54,26 @@ def measurement_configs(root: Path, filename: str) -> tuple[dict, ClockConfig, T
     return config, ClockConfig(**config["clock"]), TimingConfig(**config["timing"])
 
 
+def timestamp_event(message: dict, received_us: int, receiver_id: str, pending: dict) -> dict:
+    """Decode one completed wire message for either capture or online inference."""
+    if message.get("sample_period_us") != 25000:
+        raise ValueError("Capture requires the 25,000 us source grid")
+    if message["kind"] == "sync_response":
+        t1 = pending.get(message["request_id"])
+        if t1 is None or message["receiver_clock_id"] != receiver_id or message["receiver_send_us"] != t1:
+            raise ValueError("Unmatched synchronization response")
+        return {"kind": "sync", "source_clock_id": message["source_clock_id"],
+            "receiver_send_us": t1, "source_receive_us": message["source_receive_us"],
+            "source_send_us": message["source_send_us"], "receiver_receive_us": received_us,
+            "event_time_us": monotonic_us(), "series_id": message.get("series_id"),
+            "dataset_id": message.get("dataset_id")}
+    if message["kind"] == "packet":
+        return {"kind": "packet", "received_at_us": received_us, "event_time_us": monotonic_us(),
+            "send_time_us": message.get("send_time_us"), "series_id": message.get("series_id"),
+            **{name: message.get(name) for name in TimestampedPacket.__dataclass_fields__}}
+    raise ValueError("Unknown timestamp datagram kind")
+
+
 def query_row(view, source_clock_id: str) -> dict:
     timing = view.timing
     clock = timing.clock if timing else None
@@ -124,6 +144,19 @@ class CaptureSession:
                 timing_config=self.timing_config)
         return True
 
+    def snapshot(self, query_time_us: int):
+        """Detach a model-safe view on the event-loop owner thread."""
+        timestamp = integer_us(query_time_us, "query_time_us")
+        if timestamp < self._last_event_us:
+            raise ValueError("Recorded event order would expose future receiver information")
+        view = None
+        if self.receiver is not None:
+            view = self.receiver.snapshot(timestamp, self.clock.snapshot(timestamp),
+                context_length=self.context_length, minimum_observations=self.minimum_observations)
+        self._last_event_us = timestamp
+        self.counts["queries"] += 1
+        return view
+
     def process(self, event: dict):
         if not isinstance(event, dict):
             raise ValueError("A captured event must be a JSON object")
@@ -132,16 +165,13 @@ class CaptureSession:
         if timestamp < self._last_event_us:
             raise ValueError("Recorded event order would expose future receiver information")
         if kind == "query":
-            if self.receiver is None:
+            view = self.snapshot(timestamp)
+            if view is None:
                 row = {"source_clock_id": "", "query_time_us": timestamp, "ready": False,
                        "reason": "no_received_observation", "clock_status": "unavailable",
                        "timing_valid": False, "timing_reason": "no_received_observation"}
             else:
-                view = self.receiver.snapshot(timestamp, self.clock.snapshot(timestamp),
-                    context_length=self.context_length, minimum_observations=self.minimum_observations)
                 row = query_row(view, self.source_clock_id)
-            self._last_event_us = timestamp
-            self.counts["queries"] += 1
             return row
         if kind not in {"sync", "packet"}:
             raise ValueError(f"Unsupported captured event: {kind}")
@@ -314,23 +344,7 @@ def sync_capture(root: Path, args) -> Path:
                             data = sock.recv(MAX_DATAGRAM_BYTES + 1)
                             received = monotonic_us()
                             message = decode(data)
-                            if message.get("sample_period_us") != 25000:
-                                raise ValueError("Capture requires the 25,000 us source grid")
-                            if message["kind"] == "sync_response":
-                                t1 = pending.get(message["request_id"])
-                                if t1 is None or message["receiver_clock_id"] != receiver_id or message["receiver_send_us"] != t1:
-                                    raise ValueError("Unmatched synchronization response")
-                                event = {"kind": "sync", "source_clock_id": message["source_clock_id"],
-                                    "receiver_send_us": t1, "source_receive_us": message["source_receive_us"],
-                                    "source_send_us": message["source_send_us"], "receiver_receive_us": received,
-                                    "event_time_us": monotonic_us(), "series_id": message.get("series_id"),
-                                    "dataset_id": message.get("dataset_id")}
-                            elif message["kind"] == "packet":
-                                event = {"kind": "packet", "received_at_us": received, "event_time_us": monotonic_us(),
-                                         "send_time_us": message.get("send_time_us"), "series_id": message.get("series_id"),
-                                         **{name: message.get(name) for name in TimestampedPacket.__dataclass_fields__}}
-                            else:
-                                raise ValueError("Unknown timestamp datagram kind")
+                            event = timestamp_event(message, received, receiver_id, pending)
                             record(event)
                             if message["kind"] == "sync_response":
                                 del pending[message["request_id"]]

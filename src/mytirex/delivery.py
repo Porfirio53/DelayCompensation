@@ -76,9 +76,10 @@ def forecast_delivery(model, view: ReceiverView, estimator: ComputeLatencyEstima
         age + queue_us + compute_us, covered)
 
 
-def warmup_delivery(model, view: ReceiverView, estimator: ComputeLatencyEstimator, requests: int) -> dict:
+def warmup_delivery(model, view: ReceiverView, estimator: ComputeLatencyEstimator, requests: int,
+                    reuse_us: float = 0.0) -> dict:
     """Prewarm the actual short-horizon path; omit the first request from EWMA."""
-    steps = observation_horizon(view, extra_delivery_us=estimator.estimate_us, margin_steps=1)
+    steps = observation_horizon(view, extra_delivery_us=estimator.estimate_us + reuse_us, margin_steps=1)
     seconds = []
     for index in range(requests):
         model.synchronize()
@@ -91,7 +92,7 @@ def warmup_delivery(model, view: ReceiverView, estimator: ComputeLatencyEstimato
         seconds.append(elapsed)
         if index:
             estimator.update(elapsed * 1e6)
-    return {"requests": requests, "horizon_steps": steps, "first_request_s": seconds[0],
+    return {"requests": requests, "horizon_steps": steps, "reuse_us": reuse_us, "first_request_s": seconds[0],
             "subsequent_requests": latency_summary(seconds[1:]),
             "included_in_scoring": False, "first_request_in_estimator": False}
 

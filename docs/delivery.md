@@ -17,7 +17,7 @@ h_eff         = measured_grid_AoI(q) + queue_us + compute_us
 source_offset = measured_source_offset(q) + (queue_us + compute_us) / estimated_rate
 ```
 
-例如同域 grid AoI 为 175 ms、实测计算耗时为 14 ms 时，交付跨度为 **189 ms**。选值位于 175 与 200 ms 预测点之间，不将计算耗时取整成 25 ms。当前回放没有推理任务队列，`queue_us=0`；`forecast_delivery()` 已接受调用者提供的实际排队时间，方便后续流式系统复用。
+例如同域 grid AoI 为 175 ms、实测计算耗时为 14 ms 时，交付跨度为 **189 ms**。选值位于 175 与 200 ms 预测点之间，不将计算耗时取整成 25 ms。本入口的回放没有推理任务队列，`queue_us=0`；`forecast_delivery()` 接受调用者提供的实际排队时间。第三步的异步运行器另记录线程调度与结果分发时间，并为两次更新之间的连续发布预留轨迹，见 [流式指南](streaming.md)。
 
 `TiRexModel.forecast_observation()` 新增 `extra_delivery_us` 与 `margin_steps` 参数；默认值保留查询时刻预测。`delivery.py` 的 `forecast_delivery(model, view, estimator, queue_us=0)` 封装计算耗时测量和实际完成时刻选值，不接触评分真值。计时包含跨度规划、上下文处理、模型调用、GPU 完成与 CPU 轨迹取回；接收事件回放及返回后的取值不计入该计算耗时。
 

@@ -251,3 +251,65 @@ def write_delivery_report(output: Path, summary: pd.DataFrame, metadata: dict, e
              "<a href='config.json'>配置</a> · <a href='metadata.json'>运行信息与预热耗时</a></p>")
     (output / "report.html").write_text(_page("计算时延补偿与交付时刻误差", body), encoding="utf-8")
 
+
+def write_stream_report(output: Path, performance: pd.DataFrame, summary: pd.DataFrame,
+                        metadata: dict, publications: pd.DataFrame) -> None:
+    overall = metadata["summary"]
+    mode = "当前版 TiRex，batch=1" if metadata["model_inference"] else "接收值连续发布检查"
+    body = (f"<p>{mode}；发布 {overall['publication_count']} 个状态；实际发布频率 "
+            f"{overall['publication_hz']:.3f} Hz，预测轨迹更新频率 {overall['inference_update_hz']:.3f} Hz。</p>"
+            f"<p>跳过的发布时隙：{overall['missed_publication_ticks']}；最多同时推理：{overall['max_in_flight']}；"
+            f"待推理请求数上限：{overall['pending_request_max']}；轨迹取值比例：{overall['trajectory_fraction']:.2%}。</p>"
+            "<p>接收端在推理过程中持续维护历史；每次推理从最新快照开始。发布端按实际单调时间从缓存轨迹取值，"
+            "跨度含 AoI、计算耗时与下一次更新前的覆盖余量。</p>")
+    labels = {"series_id": "数据块", "arrival_profile": "网络", "clock_scenario": "时钟",
+        "inference_period_ms": "请求最小间隔 ms", "publication_hz": "实际发布 Hz",
+        "inference_update_hz": "轨迹更新 Hz", "publication_interval_ms_P95": "发布间隔 P95 ms",
+        "publication_interval_ms_P99": "发布间隔 P99 ms", "compute_ms_P95": "计算 P95 ms",
+        "trajectory_fraction": "轨迹取值比例", "fallback_count": "保持值回退数",
+        "missed_publication_ticks": "跳过时隙"}
+    body += performance[list(labels)].rename(columns=labels).to_html(index=False, escape=True,
+        float_format=lambda value: f"{value:.6g}")
+    if not summary.empty:
+        speed_labels = {"arrival_profile": "网络", "clock_scenario": "时钟", "inference_period_ms": "请求间隔 ms",
+            "policy": "发布方法", "speed_mps_count": "评分数", "speed_mps_MAE": "MAE m/s",
+            "speed_mps_RMSE": "RMSE m/s", "speed_mps_abs_P95": "绝对误差 P95 m/s",
+            "speed_mps_abs_P99": "绝对误差 P99 m/s"}
+        body += ("<p>各方法共享实际发布时刻。received_hold 保持最新观测；delivery_hold 保持最近交付值；"
+                 "trajectory 每次发布重新选取缓存轨迹。评分使用因果 40 Hz ZOH 参考值。</p>")
+        body += summary[list(speed_labels)].rename(columns=speed_labels).to_html(index=False, escape=True,
+            float_format=lambda value: f"{value:.6g}")
+    if not publications.empty:
+        preferred = publications[(publications.arrival_profile == "jitter_loss_tail")
+                                 & (publications.inference_period_ms == publications.inference_period_ms.max())]
+        unit = preferred.unit_id.iloc[0] if not preferred.empty else publications.unit_id.iloc[0]
+        frame = publications[publications.unit_id == unit].sort_values("publish_time_us").iloc[:6000]
+        x = (frame.publish_time_us.to_numpy() - int(frame.publish_time_us.iloc[0])) / 1e6
+        fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
+        if "reference_mps" in frame:
+            axes[0].plot(x, numeric_column(frame, "reference_mps"), color="black", label="Causal CAN reference")
+        axes[0].plot(x, numeric_column(frame, "last_observation_mps"), color="#888888", linestyle="--", label="Received hold")
+        if metadata["model_inference"]:
+            axes[0].plot(x, numeric_column(frame, "delivery_hold_mps"), color="#d55e00", label="Delivery hold", alpha=.7)
+        axes[0].plot(x, numeric_column(frame, "prediction_mps"), color="#0072b2", label="Published estimate")
+        axes[0].set_ylabel("Speed (m/s)")
+        axes[1].plot(x[1:], np.diff(frame.publish_time_us.to_numpy()) / 1000, label="Actual publication interval")
+        axes[1].axhline(metadata["selection"]["publication_period_ms"], color="black", linestyle="--", label="Scheduled interval")
+        axes[1].set_ylabel("Interval (ms)")
+        axes[2].plot(x, numeric_column(frame, "forecast_age_us") / 1000, label="Time since cache installation")
+        axes[2].plot(x, numeric_column(frame, "coverage_remaining_us") / 1000, label="Remaining trajectory coverage")
+        axes[2].set_ylabel("Cache time (ms)")
+        axes[2].set_xlabel("Actual publication time (s)")
+        for axis in axes:
+            axis.grid(alpha=.2)
+            axis.legend(loc="best")
+        fig.tight_layout()
+        destination = output / "plots"
+        destination.mkdir(exist_ok=True)
+        _save(fig, destination, "stream_trace.png")
+        body += "<img src='plots/stream_trace.png' alt='Published speed, actual intervals and cached trajectory coverage'>"
+    links = ["states.jsonl", "publications.csv", "inferences.csv", "runtime_metrics.csv",
+             "metrics_summary.csv", "metrics_by_series.csv", "events.jsonl", "config.json", "metadata.json"]
+    body += "<p>" + " · ".join(f"<a href='{name}'>{name}</a>" for name in links if (output / name).exists()) + "</p>"
+    (output / "report.html").write_text(_page("异步流式输入与连续状态发布", body), encoding="utf-8")
+

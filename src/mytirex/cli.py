@@ -30,7 +30,7 @@ def port_number(value: str) -> int:
 
 def main(argv=None) -> int:
     sys.dont_write_bytecode = True
-    parser = argparse.ArgumentParser(description="TiRex-2 causal replay, GPU measurement and clock-aware observation age")
+    parser = argparse.ArgumentParser(description="TiRex-2 causal replay, clock-aware compensation and asynchronous streaming")
     roots = argparse.ArgumentParser(add_help=False)
     roots.add_argument("--root", type=Path, default=project_root(), help="Project root; independent of current working directory")
     common = argparse.ArgumentParser(add_help=False, parents=[roots])
@@ -94,6 +94,31 @@ def main(argv=None) -> int:
     trace = commands.add_parser("replay-aoi", parents=[measurement], help="Replay recorded clock/packet/query events in receiver order")
     trace.add_argument("--aoi-config", help="Override recorded clock/timing configuration; default restores the trace header")
     trace.add_argument("--trace", required=True)
+    streaming = argparse.ArgumentParser(add_help=False, parents=[common])
+    streaming.add_argument("--aoi-config", default="configs/aoi_frozen.json")
+    streaming.add_argument("--with-model", action="store_true", help="Enable current TiRex batch=1; default publishes received values without loading a model")
+    streaming.add_argument("--publish-period-ms", type=positive, default=25, help="Absolute publication period; default 25 ms / 40 Hz")
+    streaming.add_argument("--compute-estimate-ms", type=positive_seconds, default=17.0)
+    streaming.add_argument("--warmup", type=positive, default=5, help="Unscored startup requests; first omitted from compute EWMA")
+    stream = commands.add_parser("eval-stream", parents=[streaming], help="Real-time CAN arrival replay, asynchronous inference and publication-time scoring")
+    stream.add_argument("--corpus")
+    stream.add_argument("--split", choices=("train", "validation", "test"))
+    stream.add_argument("--series-id", action="append")
+    stream.add_argument("--profile", action="append")
+    stream.add_argument("--scenario", action="append")
+    stream.add_argument("--max-series", type=positive, default=1)
+    stream.add_argument("--duration-s", type=positive_seconds, default=10, help="Timed stream window per unit, after historical prefill and warmup")
+    stream.add_argument("--replicates", type=positive, default=1)
+    stream.add_argument("--inference-period-ms", type=positive, action="append", help="Minimum request start interval; repeat to compare rates (default: 25)")
+    live = commands.add_parser("stream-receive", parents=[streaming], help="Receive real UDP timestamps while independently publishing continuous estimates")
+    live.add_argument("--host", required=True)
+    live.add_argument("--port", type=port_number, default=5005)
+    live.add_argument("--duration-s", type=positive_seconds, default=60)
+    live.add_argument("--sync-interval-ms", type=positive, default=250)
+    live.add_argument("--inference-period-ms", type=positive, default=25)
+    live.add_argument("--context-length", type=positive)
+    live.add_argument("--minimum-observations", type=positive)
+    live.add_argument("--stdout", action="store_true", help="Publish JSON lines to stdout; progress messages go to stderr")
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
     try:
@@ -118,6 +143,12 @@ def main(argv=None) -> int:
         elif args.command == "replay-aoi":
             from .transport import replay_capture
             replay_capture(root, args)
+        elif args.command == "eval-stream":
+            from .stream_experiment import eval_stream
+            eval_stream(root, args)
+        elif args.command == "stream-receive":
+            from .stream_transport import stream_receive
+            stream_receive(root, args)
     except Exception as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
         return 1

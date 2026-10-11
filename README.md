@@ -1,6 +1,6 @@
 # MyTirex
 
-面向动态通信与计算延迟的 TiRex-2 在线车辆状态预测补偿研究工程。提供 Comma2k19 speed 因果回放、离线本地模型加载、真实 GPU 单请求测量，以及四时间戳同步、动态观测年龄和交付时刻补偿。第一步见 [AoI 指南](docs/aoi.md)，第二步见 [计算时延补偿](docs/delivery.md)，后续工作见 [总方案](docs/总方案.md)。
+面向动态通信与计算延迟的 TiRex-2 在线车辆状态预测补偿研究工程。提供 Comma2k19 speed 因果回放、离线本地模型加载、真实 GPU 单请求测量，以及四时间戳同步、动态观测年龄、交付时刻补偿和异步连续状态发布。第一步见 [AoI 指南](docs/aoi.md)，第二步见 [计算时延补偿](docs/delivery.md)，第三步见 [流式系统与实验](docs/streaming.md)，研究方向见 [总方案](docs/总方案.md)。
 
 开发、测试和日常评估只使用 `vendor/tirex/` 当前版。模型使用权限与后续工作约束见 [AGENTS.md](AGENTS.md)。时间测量验收默认不加载模型。
 
@@ -101,7 +101,7 @@ cd ~/MyTirex
 
 默认从 `speed_seg01` 的第 1200 个查询（30 秒）开始逐个调用，后续使用连续查询；可调整 `--sequence`、`--query-index`。计时包括接收历史复制、输入校验/截取/转换、模型调用、GPU 完成、CPU 轨迹取回和目标点选值，每次请求前后等待 GPU。入口只接受 batch=1。
 
-`benchmark.csv` 保留每个样本；`metadata.json` 分开记录加载、第一请求（可能编译）、预热和稳定运行阶段，给出稳定样本数、P50/P95/P99 和峰值显存。已有磁盘缓存时，第一请求仍可能涉及 tracing、缓存加载或新形状的编译，不能将全部首请求耗时称为 nvcc 冷编译。32 样本尾部分位数只用于部署检查；正式尾延迟使用至少 1000 个稳定请求。此入口测模型请求端到端耗时，尚未加入在线排队、真实时钟同步或连续发布。
+`benchmark.csv` 保留每个样本；`metadata.json` 分开记录加载、第一请求（可能编译）、预热和稳定运行阶段，给出稳定样本数、P50/P95/P99 和峰值显存。已有磁盘缓存时，第一请求仍可能涉及 tracing、缓存加载或新形状的编译，不能将全部首请求耗时称为 nvcc 冷编译。32 样本尾部分位数只用于部署检查；正式尾延迟使用至少 1000 个稳定请求。此入口测模型请求端到端耗时；在线调度、时钟同步与连续发布由流式入口评价。
 
 ## 计算时延补偿
 
@@ -114,6 +114,21 @@ cd ~/MyTirex
 ```
 
 结果保存在独立 `outputs/<时间>_delivery_current/`，成功指针为 `outputs/latest_delivery.json`；报告包含本轮实际计算耗时 P50/P95/P99、两种选值的交付误差和覆盖率。参数、时间域及 40 Hz 参考值的分辨率限制见 [计算时延补偿指南](docs/delivery.md)。
+
+## 流式输入与连续输出
+
+新增 `eval-stream` 和 `stream-receive`，共享单请求异步运行器。持续接收与 25 ms 状态发布独立于 GPU 推理；后台请求完成后截取最新历史，不累积待推理任务。轨迹长度覆盖观测年龄、计算耗时和下一次更新前的时间，发布时按当前时钟映射从缓存轨迹取值。
+
+```bash
+# 无模型的短流式检查
+.venv/bin/python -m mytirex eval-stream --duration-s 1 \
+  --profile jitter_loss_tail --scenario timestamp_noise
+# 当前版 GPU 验收，由使用者手动运行；比较 40/10 Hz 请求节奏下的 40 Hz 发布
+.venv/bin/python -m mytirex eval-stream --with-model --duration-s 10 \
+  --inference-period-ms 25 --inference-period-ms 100
+```
+
+`states.jsonl` 在运行时逐行发布；`publications.csv`、`inferences.csv` 和 HTML 报告分别记录发布、推理和效果。`stream-receive --host <源端IP> --with-model --stdout` 接入现有 `sync-source`，标准输出可作为下游 JSON 流。真实 GPU 运行及正式评估由使用者执行；实现、验证记录及最多 15 min 的精简实验方案见 [流式指南](docs/streaming.md)。
 
 ## 数据与接口
 
@@ -163,4 +178,4 @@ cd ~/MyTirex
 
 AoI 实验输出 `aoi_queries.csv`、时间／速度指标、配置身份、PNG 和 HTML，成功指针为 `outputs/latest_aoi.json`。实机采集另有 `events.jsonl`，采集和重放分别更新 `latest_aoi_capture.json`、`latest_aoi_trace.json`。真实网络 AoI 的估计误差需要独立同步参考；localhost 接口验证以及使用者运行的时间测量、当前版 GPU validation 已完成。后续正式评估继续由使用者手动运行。
 
-权重、数据、预测 CSV、输出、环境和编译缓存由 `.gitignore` 排除；源码、配置身份索引和第三方许可证可纳入新仓库。初版没有 Adapter 网络或训练入口，没有完整异步在线系统，也没有模型内部增量状态复用。40 Hz 是输入采样频率，连续发布频率与模型更新频率将在后续分别评价。
+权重、数据、预测 CSV、输出、环境和编译缓存由 `.gitignore` 排除；源码、配置身份索引和第三方许可证可纳入新仓库。已有模型外部异步流式系统，输入、发布和模型更新频率分别评价。模型内部增量状态复用仍属下一阶段；Adapter 网络与训练入口继续暂缓。
