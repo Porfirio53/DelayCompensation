@@ -1,14 +1,13 @@
-"""Imported predictions are optional controls, never an inference prerequisite."""
+"""Matching current-source history is an optional development regression reference."""
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from .common import project_path, read_json, sha256, source_hash, verify_files
+from .common import current_source, project_path, read_json, sha256, source_hash, verify_files
 from .data import Sequence, dataset_identity, query_indices
 from .metrics import summarize
 
-OFFICIAL = "TiRex-2 (official)"
 HISTORICAL = "TiRex-2 (current historical)"
 QUERY_KEYS = ["sequence", "delay_ms", "query_index"]
 ARRIVAL_FIELDS = ["reference", "query_time_s", "target_time_s", "last_source_time_s", "last_observation", "visible_count"]
@@ -27,12 +26,12 @@ def select_queries(frame, expected_keys):
 
 def assert_same_observations(frame, reference):
     paired = frame[QUERY_KEYS + ARRIVAL_FIELDS].merge(
-        reference[QUERY_KEYS + ARRIVAL_FIELDS], on=QUERY_KEYS, suffixes=("", "_official"),
+        reference[QUERY_KEYS + ARRIVAL_FIELDS], on=QUERY_KEYS, suffixes=("", "_reference"),
         how="outer", validate="one_to_one", indicator=True)
     if not paired["_merge"].eq("both").all():
         raise ValueError("Reference and current prediction query grids differ")
     if not np.allclose(paired[ARRIVAL_FIELDS].to_numpy(dtype=float),
-                       paired[[field + "_official" for field in ARRIVAL_FIELDS]].to_numpy(dtype=float),
+                       paired[[field + "_reference" for field in ARRIVAL_FIELDS]].to_numpy(dtype=float),
                        rtol=1e-12, atol=1e-12):
         raise ValueError("Reference and current truth/arrival data disagree")
 
@@ -61,7 +60,11 @@ def _validate_full_grid(frame: pd.DataFrame, sequences: list[Sequence], protocol
 def reference_identity(root: Path, name: str, config: dict, settings: dict | None = None,
                        runtime: dict | None = None) -> tuple[dict, dict]:
     """Validate historical identities without resolving any historical paths."""
+    if name != "current_speed":
+        raise ValueError("Only current-source historical predictions are enabled")
     entry = read_json(root / "configs/references.json")[name]
+    if entry["source_id"] != "TiRex" or entry["directory"] != "references/current_speed":
+        raise ValueError("Historical predictions must belong to the current TiRex source")
     directory = project_path(root, entry["directory"])
     verify_files(directory, entry["sha256"])
     recorded_config = read_json(directory / "experiment_config.json")
@@ -75,27 +78,18 @@ def reference_identity(root: Path, name: str, config: dict, settings: dict | Non
     lock = read_json(root / "configs/model_manifest.json")["TiRex-2"]
     if lock != entry["model_lock"] or lock != recorded["model_lock"]["TiRex-2"]:
         raise ValueError("The reference uses a different TiRex checkpoint")
-    index = read_json(root / "configs/source_index.json")[entry["source_id"]]
-    actual_source = source_hash(project_path(root, index["directory"]))
+    _, directory_source = current_source(root)
+    actual_source = source_hash(directory_source)
     result = {"directory": str(directory), "original_directory": entry["original_directory"],
               "source_sha256": entry["source_sha256"], "source_matches": actual_source == entry["source_sha256"],
               "weights_match": True, "dataset_match": True, "protocol_match": True,
               "sha256": entry["sha256"], "rows": entry["rows"],
               "historical_timings_are_current_single_request_measurements": False}
-    if name == "official_speed":
-        if not result["source_matches"]:
-            raise ValueError("Frozen official source no longer matches the fixed predictions")
-        result["settings"] = read_json(root / "configs/tirex_official.json")
-        # The old official adapter used the unmodified defaults in the locked YAML.
-        original = recorded_config["baselines"]["TiRex-2"]
-        if original["context_length"] != 2048:
-            raise ValueError("Unexpected official context configuration")
-    else:
-        snapshot = read_json(directory / "tirex_tuning.json")
-        result["settings"] = snapshot["settings"]
-        result["settings_match"] = settings == snapshot["settings"] if settings is not None else None
-        if snapshot["source_sha256"] != entry["source_sha256"]:
-            raise ValueError("Historical current-source snapshot is inconsistent")
+    snapshot = read_json(directory / "tirex_tuning.json")
+    result["settings"] = snapshot["settings"]
+    result["settings_match"] = settings == snapshot["settings"] if settings is not None else None
+    if snapshot["source_sha256"] != entry["source_sha256"]:
+        raise ValueError("Historical current-source snapshot is inconsistent")
     if runtime is not None:
         method = metadata["method_metadata"]["TiRex-2"]
         old_runtime = {k: method[k] for k in ("device", "batch_size", "seed")}
@@ -111,13 +105,13 @@ def read_controls(root: Path, predictions: pd.DataFrame, sequences: list[Sequenc
     controls, identities = [], {}
     keys = predictions[QUERY_KEYS].copy()
     keys.insert(0, "method", "TiRex-2")
-    for name, label in (("official_speed", OFFICIAL), ("current_speed", HISTORICAL)):
+    for name, label in (("current_speed", HISTORICAL),):
         entry = read_json(root / "configs/references.json")[name]
         if not project_path(root, entry["directory"]).is_dir():
             identities[name] = {"used": False, "reason": "Optional imported reference directory is absent"}
             continue
         entry, identity = reference_identity(root, name, config, settings, runtime)
-        if name == "current_speed" and not (identity["source_matches"] and identity["settings_match"]):
+        if not (identity["source_matches"] and identity["settings_match"]):
             identities[name] = {**identity, "used": False,
                                 "reason": "Current source/configuration differs; historical predictions are not a reproduction target"}
             continue
@@ -128,11 +122,10 @@ def read_controls(root: Path, predictions: pd.DataFrame, sequences: list[Sequenc
         assert_same_observations(predictions, selected)
         identity["actual_batch_layout_matches"] = bool(np.array_equal(predictions.batch_size, selected.batch_size))
         identity["runtime_match_definition"] = "Configured device/batch size/seed/threads; actual batch layout is checked separately"
-        if name == "current_speed" or predictions.method.iloc[0] == "TiRex-2 (official run)":
-            delta = np.abs(predictions.prediction.to_numpy() - selected.prediction.to_numpy())
-            identity["prediction_difference_mps"] = {"max_absolute": float(delta.max()),
-                                                    "mean_absolute": float(delta.mean())}
-            identity["numerical_comparison_note"] = "Batch size can change floating-point rounding; runtime identity is recorded separately."
+        delta = np.abs(predictions.prediction.to_numpy() - selected.prediction.to_numpy())
+        identity["prediction_difference_mps"] = {"max_absolute": float(delta.max()),
+                                                "mean_absolute": float(delta.mean())}
+        identity["numerical_comparison_note"] = "Batch size can change floating-point rounding; runtime identity is recorded separately."
         selected["method"] = label
         controls.append(selected)
         identities[name] = {**identity, "used": True, "selected_rows": len(selected), "full_query_grid_validated": True}

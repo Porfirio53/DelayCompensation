@@ -4,11 +4,5 @@
     "migrated_source_sha256": "54cd32d1ae8baf53c883cd5f11e9e610c308643d1e2fc8a92cbddcc14ffb8cc3",
     "base_commit": "32b6645e5f0aded2e93fd22de261bfa5de1e148c",
     "role": "current optimized copy"
-  },
-  "baselines/tirex-2": {
-    "directory": "vendor/tirex_official",
-    "migrated_source_sha256": "a8c746e38e58e9300724d8160b1ca99a08e7d1efe8a037b00d424bf9f0cfcaab",
-    "base_commit": "32b6645e5f0aded2e93fd22de261bfa5de1e148c",
-    "role": "fixed official control"
   }
 }

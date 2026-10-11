@@ -51,7 +51,7 @@ def test_extending_corpus_keeps_frozen_split_assignments():
 
 
 @pytest.mark.parametrize("extension", ["", ".npy"])
-def test_official_native_format_dedup_causal_resampling_and_gap_cut(tmp_path, extension):
+def test_native_can_format_dedup_causal_resampling_and_gap_cut(tmp_path, extension):
     raw_segment(tmp_path, "car|2018-07-01--08-00-00", 0,
                 [0, .01, .04, .01, .3, .325, np.nan], [10, 20, 40, 21, 300, 325, 999], extension)
     segment, = discover_segments(tmp_path)

@@ -44,8 +44,6 @@ def doctor(root: Path, args) -> Path:
         prepared = verify_prepared(prepared_path)
         if prepared["dataset_id"] != data_index["prepared_comma2k19_v1"]["dataset_id"]:
             raise ValueError("Prepared corpus index identity mismatch")
-        _, official = reference_identity(root, "official_speed", resolved["experiment"],
-                                         resolved["settings"], resolved["runtime"])
         _, current = reference_identity(root, "current_speed", resolved["experiment"],
                                         resolved["settings"], resolved["runtime"])
         configure_runtime(root)
@@ -64,7 +62,7 @@ def doctor(root: Path, args) -> Path:
         checks = {"regression_sequences": len(sequences), "points_per_sequence": len(sequences[0].values),
                   "prepared_dataset_id": prepared["dataset_id"], "prepared_summary": prepared["summary"],
                   "prepared_examples": check_examples(prepared_path),
-                  "official_reference": official, "current_reference": current,
+                  "current_reference": current,
                   "weight_content_verified": True, "selected_source_sha256": model.source_sha256}
         if args.verify_assets:
             checks["migration"] = verify_migration(root)

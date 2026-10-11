@@ -97,9 +97,6 @@ def test_current_config_and_matching_history_are_fixed():
     assert identity["original_directory"] == "results/20261009_172124_750261_C"
     _, changed = reference_identity(ROOT, "current_speed", config, {**tuning, "trend_min_r2": 0.5}, config["runtime"])
     assert not changed["settings_match"]
-    _, official = reference_identity(ROOT, "official_speed", config)
-    assert official["settings"]["context_length"] == 2048
-    assert official["settings"]["trend_window_points"] is None
 
 
 @pytest.mark.parametrize("split", ["train", "validation", "test"])
@@ -168,14 +165,15 @@ def test_references_validate_all_queries_and_select_subset_without_prior_run(seq
     selection = {"delays_ms": [175, 300], "max_queries": 2}
     frame, _ = replay(FakeReplayModel(), sequences[:1], config["protocol"], selection)
     controls, identities = read_controls(ROOT, frame, sequences, config, tuning, config["runtime"])
-    assert len(controls) == 2 and all(len(frame) == len(control) == 4 for control in controls)
+    assert len(controls) == 1 and all(len(frame) == len(control) == 4 for control in controls)
+    assert set(identities) == {"current_speed"}
     assert all(identity["full_query_grid_validated"] for identity in identities.values())
 
 
-def test_active_source_switch_requires_a_new_process(monkeypatch):
+def test_preloaded_foreign_package_requires_a_fresh_process(monkeypatch, tmp_path):
     config = load_config(ROOT)
     model = TiRexModel(ROOT, read_tuning(ROOT, "configs/tirex_tuning.json"), config["runtime"])
-    wrong = ROOT / "vendor/tirex_official/src/tirex2/__init__.py"
+    wrong = tmp_path / "foreign/tirex2/__init__.py"
     monkeypatch.setitem(sys.modules, "tirex2", SimpleNamespace(__file__=str(wrong)))
     with pytest.raises(RuntimeError, match="fresh process"):
         model.load()

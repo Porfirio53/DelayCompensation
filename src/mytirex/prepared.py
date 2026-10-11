@@ -6,7 +6,7 @@ import json
 import re
 import numpy as np
 from .common import fingerprint, sha256
-from .arrival import PacketReceiver, ReceiverView, generate_arrivals, trace_seed
+from .arrival import PacketReceiver, ReceiverView, _readonly, generate_arrivals, trace_seed
 
 SPLITS = ("train", "validation", "test")
 ROUTE = re.compile(r"^(?P<vehicle>[A-Za-z0-9_-]+)\|(?P<day>\d{4}-\d{2}-\d{2})--\d{2}-\d{2}-\d{2}$")
@@ -175,6 +175,14 @@ class ScoringExample:
     query_index: int
 
 
+@dataclass(frozen=True)
+class PreparedSeries:
+    metadata: dict
+    source_time_us: np.ndarray
+    speed_mps: np.ndarray  # Source/scorer only; predictors receive ReceiverView.
+    native_time_us: np.ndarray
+
+
 class PreparedCorpus:
     def __init__(self, directory: Path, verify: bool = True):
         self.directory = Path(directory)
@@ -182,6 +190,29 @@ class PreparedCorpus:
                          json.loads((self.directory / "dataset_manifest.json").read_text()))
         self.config = self.manifest["identity"]["config"]
         self.inventory = json.loads((self.directory / "inventory.json").read_text())["series"]
+
+    def iter_series(self, split: str, series_ids: list[str] | None = None, max_series: int | None = None):
+        """Load existing blocks for event replay; retain the frozen day-group split."""
+        if split not in SPLITS:
+            raise ValueError(f"Choose a prepared-corpus split from {SPLITS}")
+        if max_series is not None and (isinstance(max_series, bool) or not isinstance(max_series, int) or max_series < 1):
+            raise ValueError("max_series must be a positive integer")
+        eligible = {s["series_id"] for s in self.inventory if s["split"] == split}
+        if series_ids is not None and (not series_ids or len(set(series_ids)) != len(series_ids)
+                                       or set(series_ids) - eligible):
+            raise ValueError("Choose distinct series_ids belonging to the selected frozen split")
+        selected = [s for s in sorted(self.inventory, key=lambda s: s["series_id"])
+                    if s["split"] == split and (series_ids is None or s["series_id"] in series_ids)]
+        period = self.config["resampling"]["sample_period_us"]
+        for series in selected[:max_series]:
+            with np.load(self.directory / series["file"], allow_pickle=False) as arrays:
+                times, values, native = (arrays[k] for k in ("source_time_us", "speed_mps", "native_time_us"))
+            if (times.ndim != 1 or len(times) < 2 or values.shape != times.shape or native.shape != times.shape
+                    or times.dtype != np.int64 or native.dtype != np.int64 or np.any(times < 0)
+                    or np.any(np.diff(times) != period) or not np.isfinite(values).all()
+                    or np.any(native < 0) or np.any(native > times)):
+                raise ValueError(f"Invalid prepared source grid/values/native timestamps: {series['series_id']}")
+            yield PreparedSeries(dict(series), _readonly(times), _readonly(values), _readonly(native))
 
     def iter_examples(self, split: str, profiles: list[str] | None = None, max_examples: int | None = None):
         if split not in SPLITS:

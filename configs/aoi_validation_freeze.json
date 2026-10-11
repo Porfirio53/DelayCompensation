@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-11",
+  "timezone": "Asia/Shanghai",
+  "decision": "retain validated timing settings; prioritize real timestamp measurement; current model source only",
+  "configuration_scope": "clock and observation-age parameters; model evaluation is optional and user-run",
+  "configuration_adjusted_after_validation": false,
+  "aoi_config": "configs/aoi_frozen.json",
+  "aoi_config_sha256": "00807b1b1cd68a097756167b39dc4d377b640e799d120281a8c3987961d940a8",
+  "configuration_sha256": {
+    "configs/experiment.json": "a4337f19975edd7bd38caf361a5d89cd2a2b319d2673d91564f0e4167978653d",
+    "configs/tirex_tuning.json": "767dd37ad49cdfd93b9f6f43539b3301e1dda639dfabbe821c55e97bd3fd8c4e",
+    "configs/data_index.json": "2862e1549daabc21994db4c45c8ed7a2a2fa4967400699e48fe6ecf70c5670bd",
+    "configs/references.json": "e77daaaf6670dc589a6d4fccd0d1cb0ec32de2c19abf33a719bdd5a83cd7523c",
+    "configs/model_manifest.json": "6200eb9b60b040e308377941cf20868ab2515d4dae6a24f7f295675925e118ff",
+    "configs/source_index.json": "d7a318ba1f0022019547826d7573ac472b6d17d030f8e03a4c539bbd1be2365f",
+    "configs/requirements-runtime.lock": "efa1dd56c74108fc098504ce3cdc83d2390decae6044de12b50ffb2863a50d50"
+  },
+  "integration": {
+    "source_sha256": "cbab9e90c2e8c0c9174a23fd02024eb2b202763fbd3bc8b80ce8d4d3b806d270",
+    "pyproject_sha256": "69313cdff7a058a5a3f824df437011509815cfcc0de6b31870d09d1e493838e4",
+    "runtime_lock_sha256": "efa1dd56c74108fc098504ce3cdc83d2390decae6044de12b50ffb2863a50d50"
+  },
+  "validation_integration": {
+    "source_sha256": "91b90cfc9e13726be53348daf44d82cf51ae0ee30089c01140a3132936770d39",
+    "pyproject_sha256": "69313cdff7a058a5a3f824df437011509815cfcc0de6b31870d09d1e493838e4",
+    "runtime_lock_sha256": "efa1dd56c74108fc098504ce3cdc83d2390decae6044de12b50ffb2863a50d50"
+  },
+  "integration_changed_since_validation": true,
+  "usage_policy": "AGENTS.md",
+  "usage_policy_sha256": "8c599e98a6faa8f05dfd2418e0de9aef23fe4d18a112db2f198b56d1ca8cb47a",
+  "dataset_id": "662e2eef6ef7d84c04f99d95de6bd7fb6627ef66fe704ddd771f6981f4f99828",
+  "dataset_manifest_sha256": "2bcbd0a806376764fa23bb84d646b68149ba2298c6ad23cee9f978051b661a16",
+  "validation_selection": {
+    "split": "validation",
+    "series_ids": null,
+    "max_series": null,
+    "max_queries_per_unit": null,
+    "profiles": [
+      "fixed_175",
+      "fixed_300",
+      "correlated_jitter",
+      "jitter_loss_tail"
+    ],
+    "scenarios": [
+      "shared_clock_control",
+      "clock_offset",
+      "clock_drift",
+      "timestamp_noise",
+      "asymmetric_path",
+      "underestimated_timestamp_error",
+      "sync_outage",
+      "source_stamp_bias"
+    ],
+    "query_stride": 4,
+    "replicates": 3,
+    "with_model": false
+  },
+  "model_pins": {
+    "current": {
+      "source": "current",
+      "source_sha256": "54cd32d1ae8baf53c883cd5f11e9e610c308643d1e2fc8a92cbddcc14ffb8cc3",
+      "model_lock": {
+        "repo_id": "NX-AI/TiRex-2",
+        "revision": "30788a311699acba7e6393ad9700ea7b7cb9bb2d",
+        "local_directory": "models/tirex2",
+        "sha256": {
+          "model-config.yaml": "cddbe6d0be4919cb7b0cad747fb19a295264e129d1c0790cf62133b4cb5da727",
+          "model.ckpt": "184b160ffbe4c01a26beeba14015ff3507c7497e1f3577114187bbc1d19fcac1"
+        }
+      },
+      "settings": {
+        "source_directory": "TiRex",
+        "context_length": 256,
+        "pad_context": true,
+        "tta_diff": true,
+        "trend_window_points": 32,
+        "trend_threshold": 1.5,
+        "trend_min_r2": 0.6
+      },
+      "runtime": {
+        "device": "cuda",
+        "batch_size": 64,
+        "num_threads": 4,
+        "seed": 42
+      },
+      "forecast_options": {
+        "pad_context": true,
+        "tta_diff": true,
+        "tta_sign_flip": false
+      },
+      "load_options": {
+        "compile": false,
+        "use_flex_attention": false,
+        "hf_kwargs": {
+          "local_files_only": true
+        }
+      }
+    }
+  },
+  "validation_artifacts": {
+    "timing": {
+      "directory": "outputs/20261010_190625_942320_aoi_timing",
+      "sha256": {
+        "config.json": "cf436dd2a059e2ec1d27496a06a7df2bfe6c6cc0097c4407df6e21eeb51d77d0",
+        "metadata.json": "3a55bc811783ee5114c48b4cf08218d3ab80f644c962b124412a4cba80e494a1",
+        "metrics_summary.csv": "f840e25505f0c5c8f9b79a616e3c2c66cc7eff87f1c672c51f608b03e009aff3",
+        "metrics_by_series.csv": "c61a3cf1e210840571c3d30e2a712f67ab4ce77defcc721f1969bda499f69106",
+        "metrics_timing_reasons.csv": "58b2026a59a197a12342497579b165d242996f4d9a86230f3e9c6e3d96f1773f"
+      },
+      "raw_query_csv_bytes": 16804358306
+    },
+    "current": {
+      "directory": "outputs/20261010_234729_859814_aoi_current",
+      "sha256": {
+        "config.json": "7fcf543a9e0f0c56268e160b39a5babb670d70d6fab1f8b6175b508aae4cb27e",
+        "metadata.json": "3e882fae781ba4e7f85ca3bde064b6e14ff9a58642cebb59992ab594c5d6b50c",
+        "metrics_summary.csv": "9daf0434f42e185d8e3d77e4a2c50211c680b29ed0155eec80eef7cfc1a6fa03",
+        "metrics_by_series.csv": "17c03dcd6a699051910cd9cb53ff8f636fc3d32b5119f8c0f7fdb1dc5f757018",
+        "metrics_timing_reasons.csv": "1aebd995442ac2340ee17522bde3514abd748cffc288ad0ceefbb76bd116b056"
+      },
+      "raw_query_csv_bytes": 18204753353
+    }
+  },
+  "test_overrides": {
+    "split": "test",
+    "replicates": 3,
+    "with_model": false,
+    "source": "current"
+  },
+  "retained_stress_scenarios": [
+    "asymmetric_path",
+    "sync_outage",
+    "underestimated_timestamp_error",
+    "source_stamp_bias"
+  ],
+  "bounds_interpretation": "conditional deterministic bounds; the intentionally underestimated error scenario violates their assumptions",
+  "evidence_scope": "controlled communication and clocks on causal CAN; query-time scoring, not field synchronization or delivery-time latency"
+}

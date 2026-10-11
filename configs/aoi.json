@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "dataset": "prepared_comma2k19_v1",
+  "split": "validation",
+  "context_length": 256,
+  "minimum_observations": 32,
+  "query_start_us": 7000000,
+  "query_stride": 4,
+  "seed": 20261010,
+  "replicates": 1,
+  "arrival_profiles": ["fixed_175", "fixed_300", "correlated_jitter", "jitter_loss_tail"],
+  "sync_interval_us": 250000,
+  "sync_processing_us": 20000,
+  "maximum_prediction_steps": 320,
+  "clock": {
+    "window_samples": 64,
+    "minimum_samples": 3,
+    "minimum_drift_span_us": 2000000,
+    "filter_bucket_us": 500000,
+    "max_relative_drift_ppm": 500.0,
+    "max_round_trip_us": 1000000,
+    "stale_after_us": 3000000,
+    "timestamp_error_us": 1000
+  },
+  "timing": {
+    "source_error_us": 1000,
+    "query_error_us": 1,
+    "maximum_uncertainty_us": 100000
+  },
+  "scenarios": [
+    {
+      "name": "shared_clock_control",
+      "offset_us": 0,
+      "relative_rate_ppm": 0.0,
+      "uplink_us": 1000,
+      "downlink_us": 1000,
+      "network_jitter_us": 0
+    },
+    {
+      "name": "clock_offset",
+      "offset_us": 500000,
+      "relative_rate_ppm": 0.0
+    },
+    {
+      "name": "clock_drift",
+      "offset_us": 500000,
+      "relative_rate_ppm": 120.0
+    },
+    {
+      "name": "timestamp_noise",
+      "offset_us": 500000,
+      "relative_rate_ppm": 120.0,
+      "measurement_error_us": 5000
+    },
+    {
+      "name": "asymmetric_path",
+      "offset_us": 500000,
+      "relative_rate_ppm": 120.0,
+      "uplink_us": 1000,
+      "downlink_us": 45000,
+      "network_jitter_us": 1000
+    },
+    {
+      "name": "underestimated_timestamp_error",
+      "offset_us": 500000,
+      "relative_rate_ppm": 120.0,
+      "measurement_error_us": 5000,
+      "timestamp_error_bound_us": 1000
+    },
+    {
+      "name": "sync_outage",
+      "offset_us": 500000,
+      "relative_rate_ppm": 120.0,
+      "sync_drop_probability": 0.05,
+      "outage_start_s": 20.0,
+      "outage_duration_s": 10.0
+    },
+    {
+      "name": "source_stamp_bias",
+      "offset_us": 500000,
+      "relative_rate_ppm": 120.0,
+      "source_stamp_bias_us": 10000
+    }
+  ]
+}

@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 from .metrics import numeric_column
 
-METHOD_ORDER = ("TiRex-2", "TiRex-2 (official run)", "TiRex-2 (official)", "TiRex-2 (current historical)")
-COLORS = {"TiRex-2": "#0072b2", "TiRex-2 (official run)": "#0072b2", "TiRex-2 (official)": "#777777", "TiRex-2 (current historical)": "#d55e00"}
+METHOD_ORDER = ("TiRex-2", "TiRex-2 (current historical)")
+COLORS = {"TiRex-2": "#0072b2", "TiRex-2 (current historical)": "#d55e00"}
 MAX_DISPLAY_POINTS = 2400
 
 def _methods(frame: pd.DataFrame) -> list[str]:
@@ -129,7 +129,7 @@ def write_report(output: Path, metrics: dict, metadata: dict, comparison: pd.Dat
             f"<h2>新运行指标（m/s）</h2>{table}")
     if comparison is not None:
         body += "<h2>相同查询的固定对照</h2>" + comparison.to_html(index=False, escape=True, float_format=lambda x: f"{x:.7g}")
-        body += "<p>official 为固定的官方源码与 2048 点配置；current historical 为配置匹配的优化副本历史预测。两者身份在 metadata.json 中分别记录。</p>"
+        body += "<p>current historical 为配置匹配的当前版历史预测，身份在 metadata.json 中记录。</p>"
     for path in plots:
         body += f"<img src='{html.escape(str(path.relative_to(output)))}' alt='{html.escape(path.stem)}'>"
     body += ("<p><a href='predictions.csv'>预测明细</a> · <a href='metrics_by_sequence.csv'>分序列指标</a> · "
@@ -141,8 +141,72 @@ def write_report(output: Path, metrics: dict, metadata: dict, comparison: pd.Dat
 def write_json_report(output: Path, title: str, summary: dict) -> None:
     content = html.escape(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     links = "<p><a href='metadata.json'>完整运行信息</a> · <a href='config.json'>配置</a></p>"
-    for name in ("benchmark.csv", "smoke_forecast.csv"):
+    for name in ("benchmark.csv", "smoke_forecast.csv", "aoi_queries.csv", "events.jsonl"):
         if (output / name).is_file():
             links += f"<p><a href='{name}'>{name}</a></p>"
     (output / "report.html").write_text(_page(title, f"<pre>{content}</pre>{links}"), encoding="utf-8")
+
+
+def write_aoi_report(output: Path, summary: pd.DataFrame, metadata: dict, example: pd.DataFrame) -> None:
+    columns = ["arrival_profile", "clock_scenario", "policy", "query_count", "timing_usable_count",
+        "aoi_ms_MAE", "usable_aoi_ms_MAE", "aoi_ms_abs_P95", "interval_coverage", "horizon_match_rate", "fallback_count"]
+    labels = {"arrival_profile": "网络场景", "clock_scenario": "时钟场景", "policy": "年龄确定方法",
+        "query_count": "查询数", "timing_usable_count": "可用年龄数", "aoi_ms_MAE": "AoI MAE (ms)",
+        "usable_aoi_ms_MAE": "可用 AoI MAE (ms)", "aoi_ms_abs_P95": "AoI 误差 P95 (ms)",
+        "interval_coverage": "时间区间覆盖率", "horizon_match_rate": "预测步数吻合率", "fallback_count": "回退数"}
+    if metadata["model_inference"]:
+        columns.extend(["speed_mps_count", "speed_mps_MAE", "speed_mps_abs_P95"])
+        labels.update({"speed_mps_count": "速度评分数", "speed_mps_MAE": "速度 MAE (m/s)",
+                       "speed_mps_abs_P95": "速度误差 P95 (m/s)"})
+    body = (f"<p>因果 CAN 语料，{metadata['selection']['split']} 集；{metadata['case_count']} 个查询，"
+            f"{metadata['unit_count']} 个序列/网络/时钟/重复组合。GPU 速度评分：{metadata['model_inference']}。</p>"
+            "<p class='note'>此实验使用受控的时钟与到达过程，目标是查询时刻。"
+            "时间区间包含链路不对称、时间戳误差和漂移界限；同步中断、负年龄和跨度超限保留状态。"
+            "可用年龄指标单独统计，有限保持值回退继续计入速度误差。</p>")
+    if not example.empty:
+        synced = example[example.policy == "synchronized"].sort_values("query_time_us")
+        oracle = example[example.policy == "oracle"].sort_values("query_time_us")
+        if not synced.empty:
+            destination = output / "plots"
+            destination.mkdir()
+            x = (synced.query_time_us.to_numpy() - int(synced.query_time_us.iloc[0])) / 1e6
+            fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
+            axes[0].plot(x, numeric_column(synced, "true_aoi_us") / 1000, label="True grid AoI", color="black")
+            axes[0].plot(x, numeric_column(synced, "aoi_us") / 1000, label="Synchronized AoI", color="#0072b2")
+            axes[0].fill_between(x, numeric_column(synced, "aoi_lower_us") / 1000,
+                numeric_column(synced, "aoi_upper_us") / 1000, alpha=.2, color="#0072b2", label="Clock error bounds")
+            axes[0].set_ylabel("Observation age (ms)")
+            axes[1].step(x, numeric_column(synced, "true_horizon_steps"), where="post", label="True horizon", color="black")
+            axes[1].step(x, numeric_column(synced, "horizon_steps"), where="post", label="Point horizon", color="#0072b2")
+            axes[1].step(x, numeric_column(synced, "upper_horizon_steps"), where="post", label="Conservative coverage", color="#d55e00")
+            axes[1].set_ylabel("Source-grid steps")
+            if metadata["model_inference"]:
+                axes[2].plot(x, numeric_column(synced, "prediction") - numeric_column(synced, "reference"),
+                             label="Synchronized speed error", color="#0072b2")
+                axes[2].plot(x, numeric_column(oracle, "prediction") - numeric_column(oracle, "reference"),
+                             label="Oracle speed error", color="black", alpha=.6)
+                axes[2].set_ylabel("Speed error (m/s)")
+            else:
+                axes[2].plot(x, (numeric_column(synced, "aoi_us") - numeric_column(synced, "true_aoi_us")) / 1000,
+                             label="Clock/age estimation error", color="#0072b2")
+                axes[2].axhline(0, color="black", linewidth=.8)
+                axes[2].set_ylabel("AoI error (ms)")
+            unavailable = ~synced.timing_valid.to_numpy(dtype=bool)
+            axes[2].scatter(x[unavailable], np.zeros(int(unavailable.sum())), color="#d55e00", marker="x", label="Unusable timing")
+            for axis in axes:
+                axis.legend(loc="best")
+                axis.grid(alpha=.2)
+            axes[2].set_xlabel("Elapsed query time (s)")
+            fig.suptitle(f"{synced.series_id.iloc[0]} | {synced.arrival_profile.iloc[0]} | {synced.clock_scenario.iloc[0]}")
+            fig.tight_layout()
+            _save(fig, destination, "aoi_trace.png")
+            body += "<img src='plots/aoi_trace.png' alt='Observation age and dynamic prediction horizon'>"
+    body += "<h2>观测年龄与预测误差</h2>" + summary[columns].rename(columns=labels).to_html(
+        index=False, escape=True, float_format=lambda value: f"{value:.6g}")
+    body += ("<p>oracle 使用仿真真实时钟作为对照；raw_timestamps 直接相减两端时钟；"
+             "offset_only 只校正偏移；synchronized 同时估计偏移与漂移。固定 175/300 ms 是预设年龄对照。</p>"
+             "<p><a href='aoi_queries.csv'>全部查询与时间误差</a> · <a href='metrics_summary.csv'>汇总指标</a> · "
+             "<a href='metrics_by_series.csv'>分序列指标</a> · <a href='metrics_timing_reasons.csv'>时间不可用原因</a> · "
+             "<a href='config.json'>配置</a> · <a href='metadata.json'>数据与源码身份</a></p>")
+    (output / "report.html").write_text(_page("动态观测年龄与时钟误差实验", body), encoding="utf-8")
 

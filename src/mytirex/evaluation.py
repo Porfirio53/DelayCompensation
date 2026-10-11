@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .common import (atomic_json, dependency_versions, integration_identity, new_output, project_path,
-                     publish_success, read_json, sha256, source_hash, verify_files)
+                     publish_success, read_json, require_current_source, sha256, source_hash, verify_files)
 from .data import dataset_identity, load_dataset, query_indices
 from .metrics import write_metrics
 from .model import TiRexModel, read_tuning
@@ -33,14 +33,15 @@ def load_config(root: Path, path: str | Path = "configs/experiment.json") -> dic
 
 
 def resolved_config(root: Path, args, batch_size: int | None = None) -> dict:
+    source = args.source
+    require_current_source(source)
     config = load_config(root, args.config)
     runtime = dict(config["runtime"])
     if batch_size is not None:
         runtime["batch_size"] = batch_size
     elif getattr(args, "batch_size", None) is not None:
         runtime["batch_size"] = args.batch_size
-    source = args.source
-    tuning_path = args.tirex_config or config["tuning_config" if source == "current" else "official_config"]
+    tuning_path = args.tirex_config or config["tuning_config"]
     tuning = read_tuning(root, tuning_path, source)
     return {"experiment": config, "source": source, "settings": tuning, "runtime": runtime,
             "config_file": str(project_path(root, args.config)), "config_sha256": sha256(project_path(root, args.config)),
@@ -72,7 +73,7 @@ def replay(model: TiRexModel, sequences: list, protocol: dict, selection: dict) 
                     if not np.isfinite(point):
                         raise RuntimeError("No finite published model/fallback prediction")
                     row = {
-                        "method": "TiRex-2" if model.source == "current" else "TiRex-2 (official run)",
+                        "method": "TiRex-2",
                         "sequence": sequence.name, "delay_ms": delay_ms, "query_index": int(index),
                         "query_time_us": view.query_time_us, "target_time_us": view.query_time_us,
                         "last_source_time_us": trajectory.source_time_us, "last_received_at_us": int(view.received_at_us[-1]),

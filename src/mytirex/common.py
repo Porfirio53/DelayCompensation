@@ -18,6 +18,18 @@ def project_path(root: Path, value: str | Path) -> Path:
     return (path if path.is_absolute() else root / path).resolve()
 
 
+def require_current_source(source: str) -> None:
+    if source != "current":
+        raise ValueError("Only the current TiRex source is enabled in this project")
+
+
+def current_source(root: Path) -> tuple[dict, Path]:
+    index = read_json(root / "configs/source_index.json")["TiRex"]
+    if index["directory"] != "vendor/tirex":
+        raise ValueError("The current TiRex source must resolve to vendor/tirex")
+    return index, project_path(root, index["directory"])
+
+
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -72,6 +84,10 @@ def new_output(root: Path, kind: str) -> Path:
 
 
 def publish_success(root: Path, output: Path, kind: str) -> None:
+    metadata = read_json(output / "metadata.json")
+    model = metadata.get("model")
+    if isinstance(model, dict) and model.get("source") is not None:
+        require_current_source(model["source"])
     atomic_json(root / "outputs" / f"latest_{kind}.json",
                 {"directory": str(output.relative_to(root)), "status": "success", "kind": kind})
 

@@ -15,17 +15,19 @@ from time import perf_counter
 import numpy as np
 
 from .arrival import ReceiverView, causal_filled_context
-from .common import assert_local_imports, project_path, read_json, source_hash, verify_files
+from .common import (assert_local_imports, current_source, project_path, read_json,
+                     require_current_source, source_hash, verify_files)
 from .gpu import cache_snapshot, configure_runtime
 
 
 def read_tuning(root: Path, path: str | Path, source: str = "current") -> dict:
+    require_current_source(source)
     settings = read_json(project_path(root, path))
     expected = {"source_directory", "context_length", "pad_context", "tta_diff", "trend_window_points",
                 "trend_threshold", "trend_min_r2"}
     if set(settings) != expected:
         raise ValueError(f"TiRex configuration fields must be exactly {sorted(expected)}")
-    expected_source = "TiRex" if source == "current" else "baselines/tirex-2"
+    expected_source = "TiRex"
     if settings["source_directory"] != expected_source:
         raise ValueError(f"{source} must select source_directory={expected_source!r}")
     context = settings["context_length"]
@@ -43,8 +45,6 @@ def read_tuning(root: Path, path: str | Path, source: str = "current") -> dict:
         raise ValueError("trend_threshold must be finite and > 0")
     if isinstance(r2, bool) or not isinstance(r2, (int, float)) or not np.isfinite(r2) or not 0 < r2 <= 1:
         raise ValueError("trend_min_r2 must be finite and in (0, 1]")
-    if source == "official" and (window is not None or threshold != 1.5 or r2 != 0.87):
-        raise ValueError("Official source retains its original postprocessor defaults")
     return settings
 
 
@@ -75,9 +75,30 @@ class ForecastTrajectory:
             raise ValueError("Trajectory has no unique median quantile")
         return float(self.values_mps[int(median[0]), step - 1])
 
+    def value_at_offset(self, source_offset_us: float, last_observation_mps: float) -> float:
+        """Linear median interpolation on [observed anchor, future trajectory].
+
+        Offset is in the source clock, after receiver-time conversion. The
+        strict legacy value_at() contract stays intact; no extrapolation or
+        target-truth interpolation is involved here.
+        """
+        if (isinstance(source_offset_us, bool) or not np.isfinite(source_offset_us)
+                or source_offset_us < 0 or source_offset_us > self.values_mps.shape[1] * self.sample_period_us + 1e-6
+                or not np.isfinite(last_observation_mps)):
+            raise ValueError("Offset must lie within this trajectory and the observed anchor must be finite")
+        median = np.flatnonzero(np.isclose(self.quantiles, 0.5))
+        if median.size != 1:
+            raise ValueError("Trajectory has no unique median quantile")
+        values = np.r_[last_observation_mps, self.values_mps[int(median[0])]]
+        grid = np.arange(len(values), dtype=np.float64) * self.sample_period_us
+        return float(np.interp(source_offset_us, grid, values))
+
 
 class TiRexModel:
     def __init__(self, root: Path, settings: dict, runtime: dict, source: str = "current"):
+        require_current_source(source)
+        if settings["source_directory"] != "TiRex":
+            raise ValueError("The current TiRex model requires source_directory='TiRex'")
         self.root, self.settings, self.runtime, self.source = Path(root).resolve(), dict(settings), dict(runtime), source
         self.context_length = settings["context_length"]
         self.batch_size = int(runtime["batch_size"])
@@ -85,11 +106,8 @@ class TiRexModel:
             raise ValueError("This GPU baseline requires device=cuda; CPU is not an implicit fallback")
         if self.batch_size < 1:
             raise ValueError("batch_size must be positive")
-        index = read_json(self.root / "configs/source_index.json")[settings["source_directory"]]
-        self.source_directory = project_path(self.root, index["directory"])
+        _, self.source_directory = current_source(self.root)
         self.source_sha256 = source_hash(self.source_directory)
-        if source == "official" and self.source_sha256 != index["migrated_source_sha256"]:
-            raise ValueError("Frozen official source changed")
         self.model_lock = read_json(self.root / "configs/model_manifest.json")["TiRex-2"]
         self.model_path = project_path(self.root, self.model_lock["local_directory"])
         verify_files(self.model_path, self.model_lock["sha256"])
@@ -98,6 +116,7 @@ class TiRexModel:
         self.differencing_counts = {"target_rows_seen": 0, "differenced_rows": 0}
         self.first_forecast = None
         self.current_unit_seed = None
+        self.seed_policy = "sha256 JSON [base_seed,sequence,delay_ms], first 8 bytes modulo 2**31; reset per replay unit"
 
     def load(self) -> None:
         if self.model is not None:
@@ -164,6 +183,14 @@ class TiRexModel:
         self.current_unit_seed = int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") % (2**31)
         self.torch.manual_seed(self.current_unit_seed)
 
+    def reset_for_trace(self, series_id: str, profile: str, scenario: str, replicate: int) -> None:
+        # Equal arrival histories use equal model seeds across clock scenarios.
+        payload = json.dumps([int(self.runtime["seed"]), "aoi", series_id, profile, replicate],
+                             separators=(",", ":")).encode()
+        self.current_unit_seed = int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") % (2**31)
+        self.torch.manual_seed(self.current_unit_seed)
+        self.seed_policy = "sha256 JSON [base_seed,aoi,series_id,profile,replicate]; first 8 bytes modulo 2**31; shared across clock scenarios"
+
     def prepare_context(self, view: ReceiverView) -> np.ndarray:
         times, values, mask = view.source_time_us, view.values_mps, view.received_mask
         if (times.ndim != 1 or values.shape != times.shape or mask.shape != times.shape or times.size < 2
@@ -171,10 +198,17 @@ class TiRexModel:
             raise ValueError("Forecast needs matching one-dimensional receiver history of length >= 2")
         if not view.ready or not mask[-1] or np.any(np.diff(times) != view.sample_period_us) or view.sample_period_us != 25000:
             raise ValueError("Receiver history is not ready on the 25,000 us grid")
-        if (int(times[-1]) > view.query_time_us or not np.isfinite(values[mask]).all()
-                or np.any(view.received_at_us[mask] > view.query_time_us)
-                or np.any(view.received_at_us[mask] < times[mask])):
+        if (not np.isfinite(values[mask]).all() or np.any(view.received_at_us[mask] > view.query_time_us)
+                or np.any(view.received_at_us[mask] < 0)):
             raise ValueError("History contains invalid or not-yet-arrived observations")
+        if view.timing is None:
+            if int(times[-1]) > view.query_time_us or np.any(view.received_at_us[mask] < times[mask]):
+                raise ValueError("History contains invalid or not-yet-arrived observations")
+        elif view.timing.clock is not None and view.timing.clock.at_receiver_us > view.query_time_us:
+            raise ValueError("History contains a future source-to-receiver clock mapping")
+        # A source-relative trajectory can be computed from received history
+        # without knowing clock offset. Query-time selection is gated separately
+        # by forecast_observation(), which requires valid observation timing.
         if np.any(np.isfinite(values[~mask])) or np.any(view.received_at_us[~mask] != -1):
             raise ValueError("Missing positions expose unreceived information")
         context = values if mask.all() else causal_filled_context(view)
@@ -190,6 +224,8 @@ class TiRexModel:
         if (isinstance(prediction_length, bool) or not isinstance(prediction_length, int) or prediction_length < 1
                 or not views or len(views) > self.batch_size):
             raise ValueError("Use a positive trajectory length and 1..batch_size receiver views")
+        if prediction_length > int(self.model.future_len):
+            raise ValueError(f"Prediction horizon exceeds this checkpoint's {self.model.future_len} steps")
         self.synchronize()
         started = perf_counter()
         cache_before = cache_snapshot(self.root) if self.first_forecast is None else None
@@ -248,6 +284,18 @@ class TiRexModel:
     def forecast(self, view: ReceiverView, prediction_length: int) -> ForecastTrajectory:
         return self.forecast_batch([view], prediction_length)[0]
 
+    def forecast_observation(self, view: ReceiverView, *, conservative: bool = True) -> ForecastTrajectory:
+        """Generate a query-time trajectory using measured AoI and its uncertainty."""
+        if view.timing is None:
+            length = view.horizon_steps
+        else:
+            if not view.timing.valid:
+                raise ValueError(f"Observation timing is unavailable: {view.timing.reason}")
+            length = view.timing.upper_horizon_steps if conservative else view.timing.horizon_steps
+        if length is None or not view.ready:
+            raise ValueError(f"Receiver observation is unavailable: {view.reason}")
+        return self.forecast(view, max(1, int(length)))
+
     def metadata(self) -> dict:
         return {"source": self.source, "source_directory": str(self.source_directory),
                 "source_sha256": self.source_sha256, "model_directory": str(self.model_path),
@@ -261,7 +309,7 @@ class TiRexModel:
                     "use_flex_attention": False, "hf_kwargs": {"local_files_only": True}},
                 "postprocessor_settings": self.postprocessor_settings, "differencing_counts": self.differencing_counts,
                 "differencing_audit_definition": "Actual transform_input attempts per target, including adaptive OOM retries; not independent query count",
-                "seed_policy": "sha256 JSON [base_seed,sequence,delay_ms], first 8 bytes modulo 2**31; reset per replay unit",
+                "seed_policy": self.seed_policy,
                 "last_unit_seed": self.current_unit_seed, "batch_count": len(self.batch_timings),
                 "timing_note": "Synchronized batch wall time includes context preparation, forecast and CPU return; per-row amortization is not single-request latency.",
                 "trajectory_clock": "source_time_us + step * sample_period_us; step starts at 1",

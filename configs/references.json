@@ -1,29 +1,5 @@
 {
   "format": "mytirex-speed-references-v1",
-  "official_speed": {
-    "directory": "references/official_speed",
-    "original_directory": "results/20261008_192857_796410_C",
-    "sha256": {
-      "tirex2_predictions.csv": "bc27fb7207450e0b1371785069c7e32f629066a7008f489a1a5eb08c92731e99",
-      "experiment_config.json": "1755539277e4fc7bd5c5aca7e5225959d577144b23332abd3f22126b178a47f7",
-      "run_metadata.json": "4cfcae71adc21cd0b3cdc3e89a3833cb72022a8463f039ccae84ba124b1e4f9a",
-      "metrics_summary.csv": "4ca0e95a454b654a404fcab317ee34e3d9cc956d968091fcf75469b2a7e39372",
-      "metrics_by_sequence.csv": "6c553f4196871160d9ce1a0acead6eb80cea0c820425a06abcc6cc1c4865c456"
-    },
-    "rows": 70010,
-    "source_id": "baselines/tirex-2",
-    "source_sha256": "a8c746e38e58e9300724d8160b1ca99a08e7d1efe8a037b00d424bf9f0cfcaab",
-    "dataset": "regression_speed_v1",
-    "model_lock": {
-      "repo_id": "NX-AI/TiRex-2",
-      "revision": "30788a311699acba7e6393ad9700ea7b7cb9bb2d",
-      "local_directory": "models/tirex2",
-      "sha256": {
-        "model-config.yaml": "cddbe6d0be4919cb7b0cad747fb19a295264e129d1c0790cf62133b4cb5da727",
-        "model.ckpt": "184b160ffbe4c01a26beeba14015ff3507c7497e1f3577114187bbc1d19fcac1"
-      }
-    }
-  },
   "current_speed": {
     "directory": "references/current_speed",
     "original_directory": "results/20261009_172124_750261_C",

@@ -16,6 +16,5 @@
     "num_threads": 4,
     "seed": 42
   },
-  "tuning_config": "configs/tirex_tuning.json",
-  "official_config": "configs/tirex_official.json"
+  "tuning_config": "configs/tirex_tuning.json"
 }

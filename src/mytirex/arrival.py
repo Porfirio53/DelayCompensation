@@ -7,6 +7,7 @@ from typing import Mapping
 import numpy as np
 
 from .common import fingerprint
+from .timing import ObservationTiming
 
 NEVER = np.iinfo(np.int64).max
 
@@ -96,6 +97,7 @@ class ReceiverView:
     horizon_steps: int | None
     ready: bool
     reason: str
+    timing: ObservationTiming | None = None  # None preserves the legacy shared-clock protocol.
 
 
 class PacketReceiver:

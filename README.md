@@ -1,6 +1,8 @@
 # MyTirex
 
-面向动态通信与计算延迟的 TiRex-2 在线车辆状态预测补偿研究工程。初版提供独立的 Comma2k19 speed 因果回放、离线本地模型加载、真实 GPU 诊断和 batch=1 单请求性能测量；后续在线工作见 [实施路线](docs/roadmap.md)。
+面向动态通信与计算延迟的 TiRex-2 在线车辆状态预测补偿研究工程。提供 Comma2k19 speed 因果回放、离线本地模型加载、真实 GPU 单请求测量，以及四时间戳同步、动态观测年龄和时间测量误差实验。第一步实现与运行命令见 [AoI 指南](docs/aoi.md)，后续工作见 [实施路线](docs/roadmap.md)。
+
+开发、测试和日常评估只使用 `vendor/tirex/` 当前版。模型使用权限与后续工作约束见 [AGENTS.md](AGENTS.md)。时间测量验收默认不加载模型。
 
 本机环境、源码、权重和数据已经迁移并完成 GPU 小规模运行。旧 `/home/patton/experiment2` 保留为只读来源；运行本项目不需要访问它。实际结果及验证范围见 [验证记录](docs/verification.md)，迁移来源见 [迁移说明](docs/migration.md)。
 
@@ -45,7 +47,7 @@ cd ~/MyTirex
 
 `gpu.py` 会优先定位当前 prefix 的 nvcc，设置 `CUDA_HOME`，组合 Conda `targets/*/include`、NVIDIA wheel include、`FLASHRNN_EXTRA_INCLUDE_PATHS`、`XLSTM_EXTRA_INCLUDE_PATHS` 和开发库搜索路径。默认 `MAX_JOBS=4`，可用环境变量调整。内核缓存写入本项目 `.cache/{torch_extensions,triton,inductor}`，不复用旧工作空间编译产物。显式设置的 `CUDA_HOME` 会被尊重，应指向匹配的 12.8 工具链。
 
-两份源码共享 `models/tirex2/`，加载固定为 `compile=False`、`use_flex_attention=False`、`local_files_only=True`，同时关闭 Hub 联网。源码和本地权重已经复制；运行期间不下载模型。
+当前版使用 `models/tirex2/`，加载固定为 `compile=False`、`use_flex_attention=False`、`local_files_only=True`，同时关闭 Hub 联网。源码和本地权重已经复制；运行期间不下载模型。
 
 ## 速度评估
 
@@ -81,22 +83,9 @@ cd ~/MyTirex
 
 日常配置位于 [experiment.json](configs/experiment.json)：批量、线程数、种子和所选 tuning 文件。试验其他参数时复制 tuning JSON，通过 `--tirex-config configs/my_setting.json` 指定，保留默认回归配置；源码路径通过 [source_index.json](configs/source_index.json) 映射。当前源码或配置变化后，不再将不匹配的历史 current 预测作为复现目标。
 
-## 官方对照
+## 当前版历史回归
 
-默认评估结束后才读取可选的固定预测。它们只适用于原五条插值轨迹和当前固定延迟协议，校验内容、全部查询键、到达/真值字段、权重、源码及配置来源；`--reference none` 可以完全关闭历史对照读取。当前副本参考来自配置匹配的 `20261009_172124_750261_C`。
-
-官方固定对照为 2048 点上下文、原 postprocessor 默认值；方案中约 0.02390 / 0.03013 m/s 的全量 MAE 属于该历史官方对照，不是本项目新运行的全量结果。
-
-单独运行官方源码的命令：
-
-```bash
-.venv/bin/python -m mytirex eval-speed --source official \
-  --sequence speed_seg01 --delay-ms 175 --max-queries 16
-# 官方全量回放，按需手动执行
-.venv/bin/python -m mytirex eval-speed --source official
-```
-
-两份源码都叫 `tirex2`，每条命令使用独立进程。不要在同一 Python 进程切换源码；加载器会拒绝串用。新语料或动态通信协议需要重新建立对应官方预测，不能使用旧五条轨迹的固定结果。
+默认评估结束后才读取当前版的可选历史预测。它只适用于原五条插值轨迹和当前固定延迟协议，校验内容、全部查询键、到达/真值字段、权重、源码及配置来源；`--reference none` 可以关闭历史回归读取。当前版参考来自配置匹配的 `20261009_172124_750261_C`。新语料或动态通信协议单独生成结果，不复用旧协议预测。
 
 ## 单请求性能
 
@@ -121,24 +110,45 @@ cd ~/MyTirex
 | `data/regression/comma2k19/` | 原四文件、五条**插值**速度轨迹，固定协议开发回归 |
 | `data/prepared/comma2k19/v1/` | 已准备的**因果 ZOH** CAN 语料，原 train/validation/test 与旧数据隔离策略 |
 | `data/raw/comma2k19/processed/` | 已解压原始数组；来源清单在同级 `download_manifest.json` |
-| `references/{official_speed,current_speed}/` | 选定历史预测和原始 provenance，独立于新输出 |
+| `references/current_speed/` | 当前版历史预测和原始 provenance，独立于新输出 |
 
 没有复制约 45 GB 的 archives，也不重新下载、解压或准备已有数据。数据目录迁移由 [data_index.json](configs/data_index.json) 记录；原清单中的身份、SHA 和历史路径保持原样。历史路径仅用于追溯。
 
-`data.py` / `arrival.py` / `prepared.py` 管理数据和接收可见历史，`model.py` 返回完整 `ForecastTrajectory`（9 分位数、未来速度、最后可见源时间、25000 µs 时间轴），`evaluation.py` 管理回放与评分，`report.py` 管理展示。模型接口的 `value_at()` 目前只接受预测范围内的未来网格点。
+`data.py` / `arrival.py` / `prepared.py` 管理数据和接收可见历史，`model.py` 返回完整 `ForecastTrajectory`（9 分位数、未来速度、最后可见源时间、25000 µs 时间轴），`evaluation.py` 管理回放与评分，`report.py` 管理展示。`value_at()` 接受预测范围内的未来网格点；`value_at_offset()` 支持从已收到观测锚点到未来中位数轨迹的非网格插值。
 
 准备语料通过 `PreparedCorpus.iter_examples()` 按需读取；仅将样本的 `.view` 传给模型，`.target_mps` 由评分端使用。接收视图保留源时间、接收时间、原传感器时间和未收到标记，不包含未来到达计划、最终丢包结局或目标速度。不生成重复窗口缓存。该语料尚未接入 `eval-speed` 的旧插值评分协议。
+
+## 真实时间戳与动态 AoI
+
+时间测量 validation 与当前版 GPU validation 已由使用者完成并复核，范围见 [AoI validation 记录](docs/aoi_validation.md)。当前需求首先检查算出的数据年龄与真实时间相差多少；`eval-aoi` 默认只测时间。双设备现场精度仍需独立参考。
+
+新增 `eval-aoi` 使用已有因果 CAN 语料，分别比较固定 175/300 ms、直接相减时间戳、仅偏移同步、偏移／漂移同步和 oracle 选时。覆盖抖动、丢包、乱序、时钟偏移／漂移、同步中断、链路不对称和时间戳误差界低估；记录 grid/native AoI、区间、预测跨度及失败／回退。小规模检查：
+
+```bash
+# 仅时间测量，不加载 GPU
+.venv/bin/python -m mytirex eval-aoi \
+  --max-series 1 --max-queries 16 --profile jitter_loss_tail --scenario timestamp_noise
+# 在相同轨迹上比较六种选时方法
+.venv/bin/python -m mytirex eval-aoi --with-model --source current \
+  --max-series 1 --max-queries 4 --profile jitter_loss_tail --scenario timestamp_noise --batch-size 4
+```
+
+默认使用 validation，256 点接收历史、10 Hz 评分查询。`--with-model` 才加载当前版 TiRex 并评价车速预测；纯时间测量不需要这个参数。新协议单独生成结果，不使用旧固定预测 CSV。
+
+`sync-source` / `sync-capture` 在两台设备上进行真实 UDP 四时间戳交换和 CAN 回放采集；`replay-aoi` 按原事件顺序及采集配置重放。同步器将源单调时钟换算到接收域，并在每次查询重新计算最新观测的 AoI；模型的 `forecast_observation()` 可按测得的年龄上界确定预测长度。完整公式、误差界条件、双设备命令、正式 validation/test 评估和结果解释见 [docs/aoi.md](docs/aoi.md)。
 
 ## 结果查看
 
 每次运行使用独立 `outputs/<时间>_<类型>_<源码>/`。速度回放输出 `predictions.csv`、汇总/分序列/失败指标、`config.json`、`metadata.json`、少量 PNG 和 `report.html`。误差包括 MAE、RMSE、Bias、绝对误差 P95/P99；有限回退保留评分并统计，GPU 不可用或初始整批失败会报错。
 
-`outputs/latest_speed.json`、`latest_doctor.json`、`latest_benchmark.json` 仅指向对应类型最新**成功**运行；speed 指针可能来自 current 或 official，源码身份见该目录 metadata。失败目录保留错误，不覆盖成功指针。直接用浏览器打开结果目录中的 `report.html`，或用本机静态服务查看：
+`outputs/latest_speed.json`、`latest_doctor.json`、`latest_benchmark.json` 仅指向对应类型最新**成功**的当前版运行，源码身份见该目录 metadata。失败目录保留错误，不覆盖成功指针。直接用浏览器打开结果目录中的 `report.html`，或用本机静态服务查看：
 
 ```bash
 .venv/bin/python -m http.server 8000 --bind 127.0.0.1 --directory outputs
 ```
 
 `predictions.csv` 中 `elapsed_s` 是批量耗时的摊销值，`batch_elapsed_s` 是实际同步批耗时；速度评分表中的历史 `inference_*` 列也沿用这个约定。单请求性能以 benchmark 的稳定阶段为准。
+
+AoI 实验输出 `aoi_queries.csv`、时间／速度指标、配置身份、PNG 和 HTML，成功指针为 `outputs/latest_aoi.json`。实机采集另有 `events.jsonl`，采集和重放分别更新 `latest_aoi_capture.json`、`latest_aoi_trace.json`。真实网络 AoI 的估计误差需要独立同步参考；localhost 接口验证以及使用者运行的时间测量、当前版 GPU validation 已完成。后续正式评估继续由使用者手动运行。
 
 权重、数据、预测 CSV、输出、环境和编译缓存由 `.gitignore` 排除；源码、配置身份索引和第三方许可证可纳入新仓库。初版没有 Adapter 网络或训练入口，没有完整异步在线系统，也没有模型内部增量状态复用。40 Hz 是输入采样频率，连续发布频率与模型更新频率将在后续分别评价。
