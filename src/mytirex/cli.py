@@ -123,31 +123,31 @@ def main(argv=None) -> int:
     root = args.root.expanduser().resolve()
     try:
         if args.command == "doctor":
-            from .doctor import doctor
+            from .evaluation.doctor import doctor
             doctor(root, args)
         elif args.command == "eval-speed":
-            from .evaluation import eval_speed
+            from .evaluation.speed import eval_speed
             eval_speed(root, args)
         elif args.command == "benchmark":
-            from .benchmark import benchmark
+            from .evaluation.benchmark import benchmark
             benchmark(root, args)
         elif args.command == "eval-aoi":
-            from .aoi_experiment import eval_aoi
+            from .evaluation.aoi import eval_aoi
             eval_aoi(root, args)
         elif args.command == "sync-source":
-            from .transport import sync_source
+            from .timing.transport import sync_source
             sync_source(root, args)
         elif args.command == "sync-capture":
-            from .transport import sync_capture
+            from .timing.transport import sync_capture
             sync_capture(root, args)
         elif args.command == "replay-aoi":
-            from .transport import replay_capture
+            from .timing.transport import replay_capture
             replay_capture(root, args)
         elif args.command == "eval-stream":
-            from .stream_experiment import eval_stream
+            from .streaming.replay import eval_stream
             eval_stream(root, args)
         elif args.command == "stream-receive":
-            from .stream_transport import stream_receive
+            from .streaming.live import stream_receive
             stream_receive(root, args)
     except Exception as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

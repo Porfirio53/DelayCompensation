@@ -3,9 +3,9 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from mytirex.model import ForecastTrajectory, TiRexModel
-from mytirex.receiver import TimestampedPacket, TimestampedReceiver, TimingConfig
-from mytirex.timing import ClockConfig, ClockMapping, ClockSynchronizer, SyncExchange, observation_timing
+from mytirex.inference.model import ForecastTrajectory, TiRexModel
+from mytirex.timing.receiver import TimestampedPacket, TimestampedReceiver, TimingConfig
+from mytirex.timing.clock import ClockConfig, ClockMapping, ClockSynchronizer, SyncExchange, observation_timing
 
 
 def exchange(source_origin, receiver_origin, source_tick, rate=1.0, up=5000, down=5000, process=2000):
@@ -192,7 +192,7 @@ def test_dynamic_forecast_requests_uncertainty_coverage_and_gates_invalid_timing
         buffer.ingest(packet(index), index * 25000)
     mapping = ClockMapping.known("source", "receiver", 1_000_000, 0)
     view = buffer.snapshot(350000, mapping, context_length=8, minimum_observations=1)
-    measured = replace(view.timing, upper_horizon_steps=8)
+    measured = replace(view.timing, age_upper_us=200000, upper_horizon_steps=8)
     calls = []
     class Boundary:
         def forecast(self, passed_view, length):

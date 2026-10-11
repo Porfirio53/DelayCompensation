@@ -6,14 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mytirex.aoi_experiment import evaluate_chunk, eval_aoi
-from mytirex.aoi_metrics import AoiAccumulator
-from mytirex.aoi_simulation import ClockScenario, timing_cases
+from mytirex.evaluation.aoi import evaluate_chunk, eval_aoi
+from mytirex.reporting.aoi_metrics import AoiAccumulator
+from mytirex.evaluation.simulation import ClockScenario, timing_cases
 from mytirex.common import read_json, source_hash
-from mytirex.model import ForecastTrajectory, TiRexModel
-from mytirex.prepared import PreparedSeries
-from mytirex.receiver import TimingConfig
-from mytirex.timing import ClockConfig
+from mytirex.inference.model import ForecastTrajectory, TiRexModel
+from mytirex.data.prepared import PreparedSeries
+from mytirex.timing.receiver import TimingConfig
+from mytirex.timing.clock import ClockConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXED = {"name": "fixed_175", "kind": "fixed", "delay_us": 175000}
@@ -217,8 +217,8 @@ def isolate_output(monkeypatch, tmp_path):
     def create(*args):
         output.mkdir()
         return output
-    monkeypatch.setattr("mytirex.aoi_experiment.new_output", create)
-    monkeypatch.setattr("mytirex.aoi_experiment.publish_success", lambda *args: published.append(args))
+    monkeypatch.setattr("mytirex.evaluation.aoi.new_output", create)
+    monkeypatch.setattr("mytirex.evaluation.aoi.publish_success", lambda *args: published.append(args))
     return output, published
 
 
@@ -241,7 +241,7 @@ def test_cpu_cli_pipeline_writes_exact_metrics_artifact_and_report_without_gpu(m
 
 def test_model_pipeline_failure_records_error_without_publishing_success(monkeypatch, tmp_path):
     output, published = isolate_output(monkeypatch, tmp_path)
-    monkeypatch.setattr("mytirex.aoi_experiment.TiRexModel", lambda *args: RecordingModel(all_failed=True))
+    monkeypatch.setattr("mytirex.evaluation.aoi.TiRexModel", lambda *args: RecordingModel(all_failed=True))
     with pytest.raises(RuntimeError, match="entire initial AoI batch"):
         eval_aoi(ROOT, arguments(with_model=True))
     assert read_json(output / "metadata.json")["status"] == "failed" and not published

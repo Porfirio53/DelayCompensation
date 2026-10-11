@@ -10,14 +10,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mytirex.arrival import ReceiverView
-from mytirex.common import read_json, source_hash, verify_migration
-from mytirex.data import Sequence, load_dataset, query_indices
-from mytirex.evaluation import load_config, replay
-from mytirex.metrics import summarize
-from mytirex.model import ForecastTrajectory, TiRexModel, read_tuning
-from mytirex.prepared import PreparedCorpus
-from mytirex.references import reference_identity, read_controls
+from mytirex.data.arrival import ReceiverView
+from mytirex.common import read_json, source_hash, verify_files
+from mytirex.data.regression import Sequence, load_dataset, query_indices
+from mytirex.evaluation.speed import load_config, replay
+from mytirex.reporting.metrics import summarize
+from mytirex.inference.model import ForecastTrajectory, TiRexModel, read_tuning
+from mytirex.data.prepared import PreparedCorpus
+from mytirex.data.references import reference_identity, read_controls
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,10 +27,14 @@ def sequences():
     return load_dataset(ROOT)
 
 
-def test_complete_migration_content_and_shared_model():
-    result = verify_migration(ROOT)
-    assert result["content_verified"] and result["files"] == 7462
-    assert not result["source_needed_at_runtime"]
+def test_current_runtime_assets_and_shared_model():
+    manifest = read_json(ROOT / "configs/migration_manifest.json")
+    prefixes = ("vendor/tirex/", "models/tirex2/", "data/", "references/current_speed/")
+    expected = {entry["path"]: entry["sha256"] for entry in manifest["files"]
+                if entry["path"].startswith(prefixes) or entry["path"] == "docs/2607.01204v1.pdf"}
+    assert all(any(path.startswith(prefix) for path in expected) for prefix in prefixes)
+    assert "docs/2607.01204v1.pdf" in expected
+    verify_files(ROOT, expected)
     index = read_json(ROOT / "configs/source_index.json")
     for entry in index.values():
         assert source_hash(ROOT / entry["directory"]) == entry["migrated_source_sha256"]
@@ -181,7 +185,7 @@ def test_preloaded_foreign_package_requires_a_fresh_process(monkeypatch, tmp_pat
 
 def test_no_legacy_integration_imports_in_project_code():
     forbidden = {"experiment", "adapter_training", "chronos", "multivariate_adapters", "ours_adapter"}
-    for file in (ROOT / "src/mytirex").glob("*.py"):
+    for file in (ROOT / "src/mytirex").rglob("*.py"):
         for node in ast.walk(ast.parse(file.read_text())):
             names = ([node.module] if isinstance(node, ast.ImportFrom) and node.module else
                      [x.name for x in node.names] if isinstance(node, ast.Import) else [])

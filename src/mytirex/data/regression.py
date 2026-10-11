@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .arrival import ReceiverView, _readonly
-from .common import project_path, read_json, verify_files
+from ..common import project_path, read_json, verify_files
 
 
 @dataclass(frozen=True)

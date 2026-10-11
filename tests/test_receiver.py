@@ -4,8 +4,8 @@ from pathlib import Path
 import json
 import numpy as np
 import pytest
-from mytirex.arrival import NEVER, PacketReceiver, ReceiverView, causal_filled_context, generate_arrivals, trace_seed
-from mytirex.prepared import causal_blocks, discover_segments, read_speed, route_group, split_groups
+from mytirex.data.arrival import NEVER, PacketReceiver, ReceiverView, causal_filled_context, generate_arrivals, trace_seed
+from mytirex.data.prepared import causal_blocks, discover_segments, read_speed, route_group, split_groups
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULTS = json.loads((ROOT / "data/prepared/comma2k19/v1/dataset_manifest.json").read_text())["identity"]["config"]
 

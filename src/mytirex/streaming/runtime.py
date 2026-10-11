@@ -5,11 +5,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from math import isfinite
 
-from .arrival import ReceiverView
-from .delivery import ComputeLatencyEstimator, warmup_delivery
-from .model import ForecastTrajectory, observation_horizon
-from .timing import integer_us, observation_timing
-from .transport import CaptureSession, monotonic_us
+from ..data.arrival import ReceiverView
+from ..inference.delivery import ComputeLatencyEstimator, warmup_delivery
+from ..inference.model import ForecastTrajectory, observation_horizon
+from ..timing.clock import integer_us, observation_timing
+from ..timing.transport import CaptureSession, monotonic_us
 
 INFERENCE_FIELDS = ("request_id", "source_clock_id", "receiver_clock_id", "snapshot_time_us", "started_at_us", "completed_at_us",
     "delivery_time_us", "queue_us", "compute_us", "dispatch_us", "compute_estimate_us", "reuse_us",

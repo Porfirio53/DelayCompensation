@@ -10,18 +10,18 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
-from .aoi_metrics import AoiAccumulator
-from .aoi_simulation import ClockScenario, TimingCase, timing_cases
-from .common import (atomic_json, dependency_versions, fingerprint, integration_identity, new_output,
+from ..reporting.aoi_metrics import AoiAccumulator
+from .simulation import ClockScenario, TimingCase, timing_cases
+from ..common import (atomic_json, dependency_versions, fingerprint, integration_identity, new_output,
                      project_path, publish_success, read_json, require_current_source, sha256, source_hash)
-from .evaluation import resolved_config
-from .delivery import (DELIVERY_POLICIES, ComputeLatencyEstimator, DeliveryAccumulator,
+from .speed import resolved_config
+from ..inference.delivery import (DELIVERY_POLICIES, ComputeLatencyEstimator, DeliveryAccumulator,
                        evaluate_delivery_case, warmup_delivery)
-from .model import TiRexModel, observation_horizon
-from .prepared import PreparedCorpus, verify_prepared
-from .receiver import TimingConfig
-from .timing import ClockConfig, horizon_steps, integer_us
-from .transport import prepared_path, query_row
+from ..inference.model import TiRexModel, observation_horizon
+from ..data.prepared import PreparedCorpus, verify_prepared
+from ..timing.receiver import TimingConfig
+from ..timing.clock import ClockConfig, horizon_steps, integer_us
+from ..timing.transport import prepared_path, query_row
 
 POLICIES = ("fixed_175", "fixed_300", "raw_timestamps", "offset_only", "synchronized", "oracle")
 
@@ -357,10 +357,10 @@ def eval_aoi(root: Path, args) -> Path:
                 "comparison": "paired time selection on one current-model trajectory, with identical history and delivery timestamp"}
         atomic_json(output / "metadata.json", metadata)
         if delivery:
-            from .report import write_delivery_report
+            from ..reporting.html import write_delivery_report
             write_delivery_report(output, tables, metadata, pd.DataFrame(example))
         else:
-            from .report import write_aoi_report
+            from ..reporting.html import write_aoi_report
             write_aoi_report(output, tables, metadata, pd.DataFrame(example))
         publish_success(root, output, "delivery" if delivery else "aoi")
         print(f"AoI complete: {output / 'report.html'}", flush=True)

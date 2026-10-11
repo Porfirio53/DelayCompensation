@@ -4,9 +4,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .common import current_source, project_path, read_json, sha256, source_hash, verify_files
-from .data import Sequence, dataset_identity, query_indices
-from .metrics import summarize
+from ..common import current_source, project_path, read_json, sha256, source_hash, verify_files
+from .regression import Sequence, dataset_identity, query_indices
+from ..reporting.metrics import summarize
 
 HISTORICAL = "TiRex-2 (current historical)"
 QUERY_KEYS = ["sequence", "delay_ms", "query_index"]

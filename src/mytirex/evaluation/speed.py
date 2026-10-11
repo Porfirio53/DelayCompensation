@@ -8,12 +8,12 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
-from .common import (atomic_json, dependency_versions, integration_identity, new_output, project_path,
+from ..common import (atomic_json, dependency_versions, integration_identity, new_output, project_path,
                      publish_success, read_json, require_current_source, sha256, source_hash, verify_files)
-from .data import dataset_identity, load_dataset, query_indices
-from .metrics import write_metrics
-from .model import TiRexModel, read_tuning
-from .references import comparison_table, read_controls
+from ..data.regression import dataset_identity, load_dataset, query_indices
+from ..reporting.metrics import write_metrics
+from ..inference.model import TiRexModel, read_tuning
+from ..data.references import comparison_table, read_controls
 
 
 def load_config(root: Path, path: str | Path = "configs/experiment.json") -> dict:
@@ -149,7 +149,7 @@ def eval_speed(root: Path, args) -> Path:
             "causal_rule": "source_time_us + delay_us <= query_time_us",
             "truth_attached_after_inference": True, "wall_time_s_before_report": perf_counter() - started,
         }
-        from .report import make_plots, write_report
+        from ..reporting.html import make_plots, write_report
         plots = make_plots(pd.concat([frame, *controls], ignore_index=True), output / "plots")
         atomic_json(output / "metadata.json", metadata)
         write_report(output, metrics, metadata, comparison, plots)

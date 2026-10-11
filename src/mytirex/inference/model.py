@@ -14,11 +14,11 @@ from time import perf_counter
 
 import numpy as np
 
-from .arrival import ReceiverView, causal_filled_context
-from .common import (assert_local_imports, current_source, project_path, read_json,
+from ..data.arrival import ReceiverView, causal_filled_context
+from ..common import (assert_local_imports, current_source, project_path, read_json,
                      require_current_source, source_hash, verify_files)
 from .gpu import cache_snapshot, configure_runtime
-from .timing import horizon_steps, integer_us
+from ..timing.clock import horizon_steps, integer_us
 
 
 def read_tuning(root: Path, path: str | Path, source: str = "current") -> dict:

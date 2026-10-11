@@ -14,11 +14,11 @@ import socket
 from time import monotonic_ns
 from uuid import uuid4
 
-from .common import (atomic_json, integration_identity, new_output, project_path, publish_success,
+from ..common import (atomic_json, integration_identity, new_output, project_path, publish_success,
                      read_json, sha256)
-from .prepared import PreparedCorpus
+from ..data.prepared import PreparedCorpus
 from .receiver import TimestampedPacket, TimestampedReceiver, TimingConfig
-from .timing import ClockConfig, ClockSynchronizer, SyncExchange, clock_identities, integer_us
+from .clock import ClockConfig, ClockSynchronizer, SyncExchange, clock_identities, integer_us
 
 WIRE_VERSION = 1
 MAX_DATAGRAM_BYTES = 8192
@@ -225,7 +225,7 @@ def write_capture_output(output: Path, rows: list[dict], metadata: dict) -> None
         writer.writeheader()
         writer.writerows(rows)
     atomic_json(output / "metadata.json", metadata)
-    from .report import write_json_report
+    from ..reporting.html import write_json_report
     write_json_report(output, "真实时间戳与动态观测年龄", metadata)
 
 

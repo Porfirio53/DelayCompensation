@@ -9,9 +9,9 @@ import pytest
 
 from mytirex.common import read_json
 from mytirex.cli import main
-from mytirex.receiver import TimingConfig
-from mytirex.timing import ClockConfig
-from mytirex.transport import CaptureSession, decode, encode, replay_capture, sync_capture, sync_source
+from mytirex.timing.receiver import TimingConfig
+from mytirex.timing.clock import ClockConfig
+from mytirex.timing.transport import CaptureSession, decode, encode, replay_capture, sync_capture, sync_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,8 +73,8 @@ def test_wire_version_is_an_integer_protocol_identity(version):
 
 def test_cli_capture_and_replay_have_independent_configuration_defaults(monkeypatch):
     captured = []
-    monkeypatch.setattr("mytirex.transport.sync_capture", lambda root, args: captured.append(args.aoi_config))
-    monkeypatch.setattr("mytirex.transport.replay_capture", lambda root, args: captured.append(args.aoi_config))
+    monkeypatch.setattr("mytirex.timing.transport.sync_capture", lambda root, args: captured.append(args.aoi_config))
+    monkeypatch.setattr("mytirex.timing.transport.replay_capture", lambda root, args: captured.append(args.aoi_config))
     assert main(["sync-capture", "--host", "127.0.0.1"]) == 0
     assert main(["replay-aoi", "--trace", "example.jsonl"]) == 0
     assert captured == ["configs/aoi.json", None]
@@ -91,14 +91,14 @@ def test_local_udp_four_timestamps_capture_and_replay_are_identical(monkeypatch,
             super().bind(address)
             if address == ("127.0.0.1", port):
                 ready.set()
-    monkeypatch.setattr("mytirex.transport.socket.socket", ReadySocket)
+    monkeypatch.setattr("mytirex.timing.transport.socket.socket", ReadySocket)
     outputs = iter([tmp_path / "capture", tmp_path / "replay", tmp_path / "override"])
     def create(*args):
         output = next(outputs)
         output.mkdir()
         return output
-    monkeypatch.setattr("mytirex.transport.new_output", create)
-    monkeypatch.setattr("mytirex.transport.publish_success", lambda *args: None)
+    monkeypatch.setattr("mytirex.timing.transport.new_output", create)
+    monkeypatch.setattr("mytirex.timing.transport.publish_success", lambda *args: None)
     configuration = read_json(ROOT / "configs/aoi.json")
     configuration["clock"]["timestamp_error_us"] = 17
     configuration["timing"]["source_error_us"] = 9

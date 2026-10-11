@@ -1,10 +1,10 @@
 # 真实时间戳、动态观测年龄与时间测量误差实验
 
-本阶段对应 [总方案](总方案.md) 的第一步：把预设的 175/300 ms 延迟扩展为接收端实时测得的观测年龄。实现包括应用层四时间戳同步、两个单调时钟之间的偏移／漂移估计、实际收到的源历史、查询时刻动态 AoI、时间误差区间，以及可独立运行的受控实验和 UDP 实机采集。
+本阶段对应 [研究设计](design.md) 的第一步：把预设的 175/300 ms 延迟扩展为接收端实时测得的观测年龄。实现包括应用层四时间戳同步、两个单调时钟之间的偏移／漂移估计、实际收到的源历史、查询时刻动态 AoI、时间误差区间，以及可独立运行的受控实验和 UDP 实机采集。
 
-代码已做单元测试、localhost UDP 采集／重放和少量真实 GPU 功能检查；记录见 [verification.md](verification.md)。正式数据评估及双设备网络实验由使用者运行。默认速度目标是查询时刻 `q`；第二步的可选 `--delivery` 模式加入计算耗时与交付时刻补偿，运行说明见 [delivery.md](delivery.md)。
+代码已做单元测试、localhost UDP 采集／重放和少量真实 GPU 功能检查；记录见 [维护指南的验收记录](development.md#验收范围)。正式数据评估及双设备网络实验由使用者运行。默认速度目标是查询时刻 `q`；第二步的可选 `--delivery` 模式加入计算耗时与交付时刻补偿，运行说明见 [计算时延补偿](#计算时延补偿)。
 
-2026-10-11 已复核使用者完成的时间测量与当前版 GPU 全量 validation；结果、限制和配置记录见 [aoi_validation.md](aoi_validation.md)。需要追加 held-out 时间评估时使用 [aoi_frozen.json](../configs/aoi_frozen.json)，该文件与验证过的时间配置逐字节相同。模型使用限制见 [AGENTS.md](../AGENTS.md)。
+2026-10-11 已复核使用者完成的时间测量与当前版 GPU 全量 validation；结果、限制和配置记录见 [已有验证结果](#已有验证结果)。需要追加 held-out 时间评估时使用 [aoi_frozen.json](../configs/aoi_frozen.json)，该文件与验证过的时间配置逐字节相同。模型使用限制见 [AGENTS.md](../AGENTS.md)。
 
 ## 数据选择与实验边界
 
@@ -153,7 +153,7 @@ cd /home/patton/MyTirex
 
 默认 validation 全矩阵、1 次重复约有 249 万个查询组合、1494 万行 CSV；3 次重复时随机网络部分相应增加。可以按 `--profile` / `--scenario` 分开运行，或先用 `--max-series`、`--max-queries` 限定范围。CSV 流式写入，精确百分位保留数值误差向量，内存仍随查询数增加。`--max-queries` 包含不可用与回退查询；不要用它的短运行替代长尾／中断评估。
 
-### 两台设备的真实网络测量
+## 真实网络采集与重放
 
 源端需要已有准备语料；接收端需要可运行本项目 CLI 的 Python 环境和配置。这两个入口只测时间，不调用 GPU。
 
@@ -207,17 +207,169 @@ GPU 模式的速度误差单位为 m/s。同步不可用、历史不足和跨度
 
 成功运行分别更新 `outputs/latest_aoi.json`、`latest_aoi_capture.json`、`latest_aoi_trace.json`。原固定延迟评估和参考入口独立保留。
 
-## 代码入口与下一步接入
+## 代码接口
 
 | 模块 | 责任 |
 |---|---|
-| `timing.py` | 四时间戳、因果时钟映射、误差界、观测年龄与源跨度 |
-| `receiver.py` | 实际收到的包、序号窗口、native 时间和不可变接收视图 |
-| `transport.py` | 真实 UDP 同步／回放源／采集和事件重放 |
-| `aoi_simulation.py` | 私有仿真时钟、同步扰动及只推进已完成事件的驱动 |
-| `aoi_experiment.py` / `aoi_metrics.py` | 六种选时对照、模型隔离、流式查询输出与指标 |
-| `model.py` | 动态观测跨度接口、完整分位数轨迹和源网格插值 |
+| `timing/clock.py` | 四时间戳、因果时钟映射、误差界、观测年龄与源跨度 |
+| `timing/receiver.py` | 实际收到的包、序号窗口、native 时间和不可变接收视图 |
+| `timing/transport.py` | 真实 UDP 同步／回放源／采集和事件重放 |
+| `evaluation/simulation.py` | 私有仿真时钟、同步扰动及只推进已完成事件的驱动 |
+| `evaluation/aoi.py` / `reporting/aoi_metrics.py` | 六种选时对照、模型隔离、流式查询输出与指标 |
+| `inference/model.py` | 动态观测跨度接口、完整分位数轨迹和源网格插值 |
 
 接入实际传感器时，应在源端形成规则网格并携带真实 native 时间、网格时间、序号和本次启动的 clock ID；接收端把收到的包交给 `TimestampedReceiver.ingest()`，把完成的同步交换交给 `ClockSynchronizer.update()`。每次查询取当时的 `clock.snapshot(q)` 与 `receiver.snapshot(q, mapping)`，仅把不可变视图传给模型。
 
-这些边界可用于后续异步 worker。下一步需要在同一个接收单调时钟域记录 snapshot、enqueue、start、delivery，并把取值／评分目标扩展到实际交付时刻；本阶段已提供的源网格跨度和插值接口可继续使用。
+交付补偿已在同一个接收单调时钟域记录调用与实际完成时间；异步运行器另记录 snapshot、start、delivery 和发布时刻。相关接口继续使用相同的源网格跨度与插值，见下文及 [流式指南](streaming.md)。
+
+## 计算时延补偿
+
+第二步沿用已有接收历史、时钟映射和轨迹插值，只在当前版 TiRex 外增加单请求耗时估计与完成后选值。入口是 `eval-aoi --with-model --delivery`，固定 batch=1。正式评估由使用者手动运行，功能验收使用有限查询的短命令。
+
+使用者提供的两份 1000 请求报告中，175 ms 场景稳定 P50/P95/P99 为 **13.919/15.507/16.599 ms**，300 ms 场景为 **13.602/14.544/15.746 ms**。因此取向上取整的 **17 ms** 作为计算耗时初值；每次成功推理后更新 `estimate = 0.8 × estimate + 0.2 × actual`。这些测量来自当前版，原始报告保留在 `outputs/20261011_142805_811118_benchmark_current/` 和 `outputs/20261011_142913_491793_benchmark_current/`。
+
+### 处理流程
+
+1. 获取调用时刻 `q` 的接收视图及测得的 grid AoI。只使用已经收到的历史和已完成同步。
+2. 以 AoI 上界加预计计算耗时确定预测长度，再留 **一个 25 ms 网格步**的余量。接收域的时间通过同步速率换算到源域；长度不使用真实时钟或未来标签。
+3. 同步等待 GPU 完成、CPU 轨迹返回，记录单调时钟测得的 `compute_us`。启动时默认预热 5 次；这些请求不评分，首请求也不进入 EWMA。
+4. 用实际完成时间选择轨迹中位数，支持非网格插值：
+
+```text
+delivery_time = q + queue_us + compute_us
+h_eff         = measured_grid_AoI(q) + queue_us + compute_us
+source_offset = measured_source_offset(q) + (queue_us + compute_us) / estimated_rate
+```
+
+例如同域 grid AoI 为 175 ms、实测计算耗时为 14 ms 时，交付跨度为 **189 ms**。选值位于 175 与 200 ms 预测点之间，不将计算耗时取整成 25 ms。本入口的回放没有推理任务队列，`queue_us=0`；`forecast_delivery()` 接受调用者提供的实际排队时间。第三步的异步运行器另记录线程调度与结果分发时间，并为两次更新之间的连续发布预留轨迹，见 [流式指南](streaming.md)。
+
+`TiRexModel.forecast_observation()` 新增 `extra_delivery_us` 与 `margin_steps` 参数；默认值保留查询时刻预测。`inference/delivery.py` 的 `forecast_delivery(model, view, estimator, queue_us=0)` 封装计算耗时测量和实际完成时刻选值，不接触评分真值。计时包含跨度规划、上下文处理、模型调用、GPU 完成与 CPU 轨迹取回；接收事件回放及返回后的取值不计入该计算耗时。
+
+### 手动运行
+
+先运行一个小范围检查；首次请求仍可能需要约 24–25 s 的内核编译／初始化：
+
+```bash
+cd /home/patton/MyTirex
+.venv/bin/python -m mytirex eval-aoi --with-model --delivery \
+  --max-series 1 --max-queries 32 \
+  --profile fixed_175 --profile fixed_300 --scenario shared_clock_control
+```
+
+需要检查动态 AoI 与漂移时，可手动运行：
+
+```bash
+.venv/bin/python -m mytirex eval-aoi --with-model --delivery \
+  --max-series 1 --max-queries 100 --query-stride 1 \
+  --profile jitter_loss_tail --scenario timestamp_noise
+```
+
+可用 `--compute-estimate-ms 17 --warmup 5` 调整启动参数；无需另建配置。去掉 `--delivery` 继续原来的六种时间确定方法实验；不加 `--with-model` 的时间测量入口仍不加载模型。
+
+### 结果解释
+
+输出位于独立的 `outputs/<时间>_delivery_current/`，成功指针为 `outputs/latest_delivery.json`。报告比较同一条短轨迹上的两种选值：
+
+| 方法 | 交付时刻使用的预测 |
+|---|---|
+| `aoi_only` | 保留调用时刻 `q` 的选值，计算期间没有向后移动 |
+| `compute_compensated` | 按实际计算耗时移动到 `delivery_time` 重新选值 |
+
+两者共享历史、推理结果和交付时间，隔离计算时延补偿的选时效果。报告中的 `start_speed_mps_*` 保留调用时刻误差，`speed_mps_*` 改为交付时刻误差；`compute_ms_P50/P95/P99` 来自本轮实际单请求，不是批量摊销值。AoI 误差列仍评价调用时刻的时间测量。
+
+`aoi_queries.csv` 保存 `compute_estimate_us`、`compute_us`、`queue_us`、`delivery_time_us`、`effective_horizon_us`、`selected_source_offset_us`、轨迹长度及覆盖状态。轨迹不能覆盖实际完成时刻时，保留 `delivery_horizon_exhausted` 并用最新已收到观测回退；不外推，也不再次推理。
+
+交付参考按实际完成时刻换算到源域，从现有 **40 Hz 因果 ZOH** 真值中选此前最近一格；不插值未来真值，超出数据块末端的目标不评分。由于多数计算耗时小于 25 ms，调用与交付参考可能相同，这是该语料的时间分辨率限制；本阶段不据此声称亚采样级真实车辆状态精度或已实现在线 40 Hz 发布。
+
+## 已有验证结果
+
+以下是使用者完成的时间测量与当前版 GPU validation，复核日期为 2026-10-11。它们保留历史源码身份；本次目录整理没有重新执行全量评估。
+
+### 完整性与身份
+
+| 运行 | 任务数 | 查询组合数 | 六种方法的记录行数 | 总耗时 | 报告 |
+|---|---:|---:|---:|---:|---|
+| timing | 9,408 | 4,978,752 | 29,872,512 | 2.185 h | [report.html](../outputs/20261010_190625_942320_aoi_timing/report.html) |
+| current | 9,408 | 4,978,752 | 29,872,512 | 4.028 h | [report.html](../outputs/20261010_234729_859814_aoi_current/report.html) |
+
+147 个 validation 块来自 11 条记录、6 个车辆／日期 group；这些 group 的车辆标识相同。固定网络各运行一次，两种随机网络各重复三次，因此每个块有 `8 × (1 + 1 + 3 + 3) = 64` 个任务。
+
+两组均为 `status=success`，没有 `max-series`、`max-queries` 或指定 series 的限制。每组全部 56,448 个分块／重复／场景／方法组合及其查询数量与冻结数据 inventory 计算的计划一致。两组的全部分块时间指标完全相同，汇总计数与分块之和一致，所有时间不可用原因均能对上数量。原始 CSV 另抽查了开头 1,000 个查询的时间、观测、真值和查询键；没有逐行比对全部原始 CSV。
+
+数据清单、当前版 vendor 和 checkpoint 的内容身份再次核对通过，27 项复核全部通过。完整逐查询 CSV 已无损压缩为 `aoi_queries.csv.gz`，汇总、配置和身份未改，存储校验见各目录 `storage.json`。两个 validation 运行记录的共同集成源码 SHA256 为 `91b90cfc9e13726be53348daf44d82cf51ae0ee30089c01140a3132936770d39`，AoI JSON SHA256 为 `00807b1b1cd68a097756167b39dc4d377b640e799d120281a8c3987961d940a8`。原复核时的身份保存在 [audit.json](../outputs/validation_aoi_review/audit.json) 和历史 [配置记录](../configs/aoi_validation_freeze.json) 中；本次目录整理后的身份见 [短验收记录](../outputs/verification/20261011_cleanup/verification.json) 同目录各结果的 `metadata.json`。历史正式结果不代表修改后的代码已完成全量重跑。[review.py](../outputs/validation_aoi_review/review.py) 仅复核时间测量与当前版已有结果，不运行推理；分发包需另恢复两份完整压缩表后才能执行该复核。
+
+当前版 GPU 运行实际使用 `cuda:0`，每个查询使用 256 点接收历史并生成 320 步轨迹。全部预测保留评分，推理失败、缺失预测和跨度超限均为零。有 28,672,089 行成功选值、1,200,423 行保持值回退；回退来自 `offset_only` 和 `synchronized` 两种方法的时间不可用，并非 GPU 失败。
+
+耗时是全量批处理总耗时，不能用它除以查询数量评价在线单请求时延。
+
+### 时间判断
+
+下面均为 `jitter_loss_tail` 网络、`synchronized` 方法；可用误差只统计 `timing_valid=true` 的查询，区间覆盖率以有限区间为分母。
+
+| 时钟场景 | 时间可用率 | 可用年龄 MAE ms | 可用绝对误差 P99 ms | 有限区间覆盖率 |
+|---|---:|---:|---:|---:|
+| shared_clock_control | 99.964% | ≈0 | ≈0 | 100% |
+| clock_offset | 99.285% | 0.2084 | 0.6987 | 100% |
+| clock_drift | 99.247% | 0.2080 | 0.7002 | 100% |
+| timestamp_noise | 99.270% | 2.2176 | 7.6251 | 100% |
+| asymmetric_path | 98.526% | 22.0011 | 22.3284 | 100% |
+| source_stamp_bias | 98.526% | 10.0031 | 10.6151 | 100% |
+| sync_outage | 85.519% | 0.2014 | 0.7129 | 100% |
+| underestimated_timestamp_error | 21.436% | 1.2578 | 3.8414 | 87.808% |
+
+在含时间噪声的代表性场景中，固定 175/300 ms 的年龄 MAE 为 **61.5547 / 124.5763 ms**；同步方法的全部有限点估计 MAE 为 **2.2169 ms**，可用点估计 MAE 为 **2.2176 ms**。两者统计范围不同。
+
+声明界限与注入误差匹配的七个场景，在全部四种网络上的有限 grid/native 区间都覆盖真实年龄；所有场景的保守步数均未低估真实步数。这是本轮受控实验的结果，区间仍依赖声明的频率和时间戳误差条件，不能据此保证任意现场测量。
+
+压力场景揭示了具体边界：
+
+- 请求／响应路径设为 1/45 ms 时，点估计有约 22 ms 偏差。四时间戳本身无法区分固定路径不对称与时钟偏差；区间能覆盖这种偏差，现场精度仍需要独立参考。
+- 20–30 s 同步中断时，系统会在最近同步超过 3 s 后标记过期。当前版模型评估有 89,122 个同步方法回退查询，占该场景全部网络查询的约 14.32%；这些查询保持最后收到的车速并继续计入速度评分。
+- 时间误差实际为 ±5 ms、估计器却只声明 ±1 ms 时，同步方法在全部网络上的 622,344 个查询中有 490,666 个回退，约 78.84%。仍有有限区间未覆盖真实年龄；可用样本的较小平均误差不能掩盖这个问题。
+- 观测时间戳偏快 10 ms 时，年龄点估计仍有约 10 ms 偏差；声明相应误差界使区间覆盖，但没有自动消除源传感器的标记偏差。
+- 很新的观测可能因估计偏差得到负年龄，现有策略明确回退。理想共享时钟的随机网络也有少量浮点边界回退；本轮保留现有策略与结果，不在冻结后改变其处理规则。
+
+完整表见 [synchronized_timing.csv](../outputs/validation_aoi_review/synchronized_timing.csv)。
+
+### 当前版预测器接入结果
+
+本节是已经完成的可选模型评估，检查选时误差对后续预测的影响。代表性 `jitter_loss_tail × timestamp_noise` 场景包含 233,379 个查询组合，汇总全部 147 个块和 3 次随机网络重复，包含保持值回退。
+
+| 选时方法 | current MAE m/s |
+|---|---:|
+| fixed_175 | 0.02982425 |
+| fixed_300 | 0.04248578 |
+| raw_timestamps | 0.12690717 |
+| offset_only | 0.02180585 |
+| synchronized | 0.02182657 |
+| oracle | 0.02177432 |
+
+同步方法相对固定 175/300 ms 的 MAE 降低 **26.82% / 48.63%**。其平均绝对误差约为 **0.0786 km/h**，对应固定 175 ms 的 **0.1074 km/h**，绝对改善约 **0.029 km/h**；不能把相对百分比解释为巨大的实车速度变化。
+
+这里的 oracle 只消除了选时误差：它与其他方法使用同一条当前版模型轨迹，不是完美车速预测器，也不是所有模型可能达到的最优误差。同步方法与这一对照的 MAE 差距为 **0.24%**，说明这个场景中选时误差已较小。
+
+该场景在全部 6 个记录日期、3 次网络重复中均有改善，147 个块中有 145 个块的平均误差下降。这里只描述 validation 的稳定性，不把近邻查询或同一记录日期的块当成独立样本，也不宣称实车效果或统计显著性。
+
+仅校正偏移已经取得大部分收益。在无时间噪声的漂移场景，拟合漂移把可用年龄 MAE 从 **0.9136 ms** 降到 **0.2080 ms**；加入 ±5 ms 时间噪声后，偏移对照的年龄 MAE **1.7777 ms** 小于漂移拟合的 **2.2176 ms**，速度 MAE 也略小。因此不能宣称拟合漂移在任何噪声水平下都优于仅偏移；时间配置继续保留两种方法。
+
+可复核的汇总及日期／重复／分块表在 [validation_aoi_review](../outputs/validation_aoi_review/audit.json) 同目录。
+
+### 时间配置与可选 held-out test
+
+[aoi_frozen.json](../configs/aoi_frozen.json) 是验证过的 [aoi.json](../configs/aoi.json) 的逐字节副本，SHA256 相同。[aoi_validation_freeze.json](../configs/aoi_validation_freeze.json) 记录时间配置、数据、当前版模型参数、两份已有 validation 输出身份，以及原复核时的集成代码身份。它是历史复核记录，CLI 的 `--aoi-config` 应指向 `aoi_frozen.json`。
+
+冻结配置自身保留原来的 `split=validation`、`replicates=1`；需要追加 test 时使用明确的命令行覆盖，与本轮 validation 的三次重复设置一致。单独验证时间测量使用以下命令，不加载模型：
+
+```bash
+cd /home/patton/MyTirex
+
+.venv/bin/python -m mytirex eval-aoi \
+  --aoi-config configs/aoi_frozen.json \
+  --split test --replicates 3
+```
+
+按冻结 inventory，该 test 命令为 **91 个块、5,824 个任务、3,086,912 个查询组合、18,521,472 行方法记录**。只有另有预测器评估需求时才添加 `--with-model`，此入口仅使用当前版 TiRex。
+
+test 评估由使用者运行；本次复核只核对数据内容身份并用 inventory 计算 test 任务数，没有分析 test 速度数组，也没有执行 test 推理。时间评估重点检查年龄误差、可用率和区间覆盖率；若后续调整时间方案，应把修改作为新的实验并重新验证。
+
+本轮 validation 证据来自因果 ZOH CAN 参考速度及受控通信／时钟，只评价查询时刻。交付与发布时刻由独立入口评价；双设备现场时间精度仍需独立参考。

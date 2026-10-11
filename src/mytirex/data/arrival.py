@@ -6,8 +6,8 @@ from typing import Mapping
 
 import numpy as np
 
-from .common import fingerprint
-from .timing import ObservationTiming
+from ..common import fingerprint
+from ..timing.clock import ObservationTiming
 
 NEVER = np.iinfo(np.int64).max
 

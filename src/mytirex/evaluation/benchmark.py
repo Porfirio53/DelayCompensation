@@ -7,11 +7,11 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
-from .common import (atomic_json, dependency_versions, integration_identity, new_output, publish_success,
+from ..common import (atomic_json, dependency_versions, integration_identity, new_output, publish_success,
                      source_hash)
-from .data import dataset_identity, load_dataset
-from .evaluation import resolved_config
-from .model import TiRexModel
+from ..data.regression import dataset_identity, load_dataset
+from .speed import resolved_config
+from ..inference.model import TiRexModel
 
 
 def latency_summary(seconds: list[float]) -> dict:
@@ -100,7 +100,7 @@ def benchmark(root: Path, args) -> Path:
                     "small_sample_note": "Tail percentiles describe the recorded sample only; use >=1000 stable requests for formal tail measurements."}
         pd.DataFrame(rows).to_csv(output / "benchmark.csv", index=False)
         atomic_json(output / "metadata.json", metadata)
-        from .report import write_json_report
+        from ..reporting.html import write_json_report
         write_json_report(output, "TiRex-2 batch=1 单请求性能", {"batch_size": 1, "phases": phases,
                           "gpu": metadata["model"]["gpu_name"], "configuration": resolved["settings"]})
         publish_success(root, output, "benchmark")

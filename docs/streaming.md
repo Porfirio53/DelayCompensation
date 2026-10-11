@@ -123,7 +123,7 @@ cd /home/patton/MyTirex
 
 成功指针分别为 `latest_stream.json`、`latest_stream_timing.json`、`latest_stream_live.json`、`latest_stream_live_timing.json`。默认无模型检查不会覆盖 GPU 流式结果指针。真实 UDP 报告只记录调度与观测年龄，速度误差由带参考值的受控回放评价。
 
-本次开发验证使用以下必要检查，共 **28 项通过**，未加载 GPU 模型：
+原流式开发阶段使用以下必要检查，共 **28 项通过**，未加载 GPU 模型。本次目录整理后的完整检查及短验收见 [维护指南](development.md#验收范围)。
 
 ```bash
 .venv/bin/python -m pytest \
@@ -133,6 +133,6 @@ cd /home/patton/MyTirex
 
 合成 CPU 轨迹检查覆盖 70–90 ms 慢推理下的接收／发布并行、最新历史合并、缓存连续选值、无新包时覆盖刷新、耗时超估计时保持值输出、源会话变更及绝对发布时钟；入口检查覆盖配对评分和 localhost UDP。
 
-另完成一次实际 1 s 无模型回放：40 个状态、**40.0 Hz**、跳过时隙 0，发布间隔 P50/P95/P99 为 **25.176 / 25.751 / 26.117 ms**，进程中 `torch` 与 `tirex2` 均未导入。记录见 [短检查报告](../outputs/20261011_184534_246487_stream_timing/report.html)。当前版 GPU 验收与正式流式效果由上面的手动命令完成。
+另完成一次实际 1 s 无模型回放：40 个状态、**40.0 Hz**、跳过时隙 0，发布间隔 P50/P95/P99 为 **25.176 / 25.751 / 26.117 ms**，进程中 `torch` 与 `tirex2` 均未导入。记录见 [短检查报告](../outputs/20261011_184534_246487_stream_timing/report.html)。已有当前版 15 分钟受控流式实验保留在 [完整流式报告](../outputs/20261011_185625_913343_stream_current/report.html)：35,991 次发布，实际 39.99 Hz，最多一个在途请求、无待推理队列，轨迹取值比例约 99.91%。这是使用者完成的原实验，本次目录整理仅运行短验收。
 
-主要代码：[`streaming.py`](../src/mytirex/streaming.py) 是共享运行器；[`stream_experiment.py`](../src/mytirex/stream_experiment.py) 是实时回放和评分；[`stream_transport.py`](../src/mytirex/stream_transport.py) 是 UDP 与连续输出入口。
+主要代码：[`runtime.py`](../src/mytirex/streaming/runtime.py) 是共享运行器；[`replay.py`](../src/mytirex/streaming/replay.py) 是实时回放和评分；[`live.py`](../src/mytirex/streaming/live.py) 是 UDP 与连续输出入口。

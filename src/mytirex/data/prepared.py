@@ -5,7 +5,7 @@ import csv
 import json
 import re
 import numpy as np
-from .common import fingerprint, sha256
+from ..common import fingerprint, sha256
 from .arrival import PacketReceiver, ReceiverView, _readonly, generate_arrivals, trace_seed
 
 SPLITS = ("train", "validation", "test")

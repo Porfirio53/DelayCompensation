@@ -6,11 +6,11 @@ from time import sleep
 import numpy as np
 import pytest
 
-from mytirex.model import ForecastTrajectory, TiRexModel
-from mytirex.receiver import TimingConfig
-from mytirex.streaming import StreamConfig, StreamingRuntime, sleep_until
-from mytirex.timing import ClockConfig, ClockMapping
-from mytirex.transport import CaptureSession, monotonic_us
+from mytirex.inference.model import ForecastTrajectory, TiRexModel
+from mytirex.timing.receiver import TimingConfig
+from mytirex.streaming.runtime import StreamConfig, StreamingRuntime, sleep_until
+from mytirex.timing.clock import ClockConfig, ClockMapping
+from mytirex.timing.transport import CaptureSession, monotonic_us
 
 PERIOD = 25000
 DELAY = 175000

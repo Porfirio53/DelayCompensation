@@ -8,14 +8,14 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
-from .common import (atomic_json, dependency_versions, integration_identity, new_output, project_path,
+from ..common import (atomic_json, dependency_versions, integration_identity, new_output, project_path,
                      publish_success, read_json, sha256, verify_migration)
-from .data import dataset_identity, load_dataset
-from .evaluation import resolved_config
-from .gpu import configure_runtime, toolchain_report
-from .model import TiRexModel
-from .prepared import check_examples, verify_prepared
-from .references import reference_identity
+from ..data.regression import dataset_identity, load_dataset
+from .speed import resolved_config
+from ..inference.gpu import configure_runtime, toolchain_report
+from ..inference.model import TiRexModel
+from ..data.prepared import check_examples, verify_prepared
+from ..data.references import reference_identity
 
 
 def extension_links(root: Path) -> list[dict]:
@@ -96,7 +96,7 @@ def doctor(root: Path, args) -> Path:
             metadata.update({"gpu_inference_validated": True, "smoke": timings, "model": model.metadata(),
                              "compiled_extension_links": extension_links(root)})
         atomic_json(output / "metadata.json", metadata)
-        from .report import write_json_report
+        from ..reporting.html import write_json_report
         write_json_report(output, "TiRex-2 环境与 GPU 验证", {"gpu_inference_validated": metadata["gpu_inference_validated"],
                           "environment": environment, "checks": checks, "smoke": metadata.get("smoke")})
         publish_success(root, output, "doctor")

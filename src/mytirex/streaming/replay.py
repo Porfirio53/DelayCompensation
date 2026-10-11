@@ -9,20 +9,20 @@ import json
 import numpy as np
 import pandas as pd
 
-from .aoi_experiment import load_aoi_config
-from .aoi_metrics import error_statistics
-from .aoi_simulation import ClockScenario, SimulationClock, synchronization_trials
-from .arrival import NEVER, generate_arrivals, trace_seed
-from .common import (atomic_json, fingerprint, integration_identity, new_output, project_path,
+from ..evaluation.aoi import load_aoi_config
+from ..reporting.aoi_metrics import error_statistics
+from ..evaluation.simulation import ClockScenario, SimulationClock, synchronization_trials
+from ..data.arrival import NEVER, generate_arrivals, trace_seed
+from ..common import (atomic_json, fingerprint, integration_identity, new_output, project_path,
                      publish_success, read_json, require_current_source, sha256, source_hash)
-from .delivery import ComputeLatencyEstimator, warmup_delivery
-from .evaluation import resolved_config
-from .model import TiRexModel
-from .prepared import PreparedCorpus
-from .receiver import TimingConfig
-from .streaming import INFERENCE_FIELDS, StreamConfig, StreamingRuntime, sleep_until
-from .timing import ClockConfig
-from .transport import CaptureSession, monotonic_us, prepared_path
+from ..inference.delivery import ComputeLatencyEstimator, warmup_delivery
+from ..evaluation.speed import resolved_config
+from ..inference.model import TiRexModel
+from ..data.prepared import PreparedCorpus
+from ..timing.receiver import TimingConfig
+from .runtime import INFERENCE_FIELDS, StreamConfig, StreamingRuntime, sleep_until
+from ..timing.clock import ClockConfig
+from ..timing.transport import CaptureSession, monotonic_us, prepared_path
 
 UNIT_FIELDS = ("unit_id", "source", "series_id", "split", "arrival_profile", "clock_scenario",
                "replicate", "inference_period_ms")
@@ -323,7 +323,7 @@ def eval_stream(root: Path, args) -> Path:
             "historical_fixed_references_used": False,
             "runs": [{key: value for key, value in run.items() if key != "input_lateness_us"} for run in runs]}
         atomic_json(output / "metadata.json", metadata)
-        from .report import write_stream_report
+        from ..reporting.html import write_stream_report
         write_stream_report(output, performance, summary, metadata, frame)
         publish_success(root, output, "stream" if args.with_model else "stream_timing")
         print(f"Streaming complete: {output / 'report.html'}", flush=True)

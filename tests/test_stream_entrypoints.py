@@ -11,14 +11,14 @@ import pandas as pd
 import pytest
 
 from mytirex.cli import main
-from mytirex.aoi_simulation import ClockScenario
+from mytirex.evaluation.simulation import ClockScenario
 from mytirex.common import read_json, source_hash
-from mytirex.model import ForecastTrajectory, TiRexModel
-from mytirex.prepared import PreparedSeries
-from mytirex.receiver import TimingConfig
-from mytirex.stream_experiment import RealtimeReplay
-from mytirex.timing import ClockConfig
-from mytirex.transport import CaptureSession, sync_source
+from mytirex.inference.model import ForecastTrajectory, TiRexModel
+from mytirex.data.prepared import PreparedSeries
+from mytirex.timing.receiver import TimingConfig
+from mytirex.streaming.replay import RealtimeReplay
+from mytirex.timing.clock import ClockConfig
+from mytirex.timing.transport import CaptureSession, sync_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,7 +34,7 @@ def isolated_output(monkeypatch, tmp_path, module):
 
 
 def test_model_free_real_time_replay_writes_live_states_and_valid_measurements(monkeypatch, tmp_path):
-    output = isolated_output(monkeypatch, tmp_path, "mytirex.stream_experiment")
+    output = isolated_output(monkeypatch, tmp_path, "mytirex.streaming.replay")
     def forbidden(*args):
         pytest.fail("Model-free streaming must not load a GPU model")
     monkeypatch.setattr(TiRexModel, "load", forbidden)
@@ -98,8 +98,8 @@ class SyntheticBoundary:
 
 
 def test_paired_scoring_shares_publication_times_and_separates_steady_latency_from_warmup(monkeypatch, tmp_path):
-    output = isolated_output(monkeypatch, tmp_path, "mytirex.stream_experiment")
-    monkeypatch.setattr("mytirex.stream_experiment.TiRexModel", SyntheticBoundary)
+    output = isolated_output(monkeypatch, tmp_path, "mytirex.streaming.replay")
+    monkeypatch.setattr("mytirex.streaming.replay.TiRexModel", SyntheticBoundary)
     assert main(["eval-stream", "--with-model", "--duration-s", ".25", "--warmup", "2",
                  "--inference-period-ms", "25", "--inference-period-ms", "100"]) == 0
     frame = pd.read_csv(output / "publications.csv")
@@ -125,7 +125,7 @@ def test_paired_scoring_shares_publication_times_and_separates_steady_latency_fr
 
 
 def test_live_udp_stream_publishes_json_to_stdout_and_logs_replayable_inputs(monkeypatch, tmp_path, capsys):
-    output = isolated_output(monkeypatch, tmp_path, "mytirex.stream_transport")
+    output = isolated_output(monkeypatch, tmp_path, "mytirex.streaming.live")
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -136,7 +136,7 @@ def test_live_udp_stream_publishes_json_to_stdout_and_logs_replayable_inputs(mon
             super().bind(address)
             if address == ("127.0.0.1", port):
                 ready.set()
-    monkeypatch.setattr("mytirex.transport.socket.socket", ReadySocket)
+    monkeypatch.setattr("mytirex.timing.transport.socket.socket", ReadySocket)
     def serve():
         try:
             sync_source(ROOT, SimpleNamespace(corpus=None, split="validation", series_id=None,

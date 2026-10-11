@@ -10,12 +10,12 @@ from uuid import uuid4
 
 import pandas as pd
 
-from .common import atomic_json, integration_identity, new_output, publish_success, require_current_source, source_hash
-from .evaluation import resolved_config
-from .model import TiRexModel
-from .stream_experiment import UNIT_FIELDS, stream_metrics
-from .streaming import INFERENCE_FIELDS, StreamConfig, StreamingRuntime, sleep_until
-from .transport import (CaptureSession, decode, encode, measurement_configs,
+from ..common import atomic_json, integration_identity, new_output, publish_success, require_current_source, source_hash
+from ..evaluation.speed import resolved_config
+from ..inference.model import TiRexModel
+from .replay import UNIT_FIELDS, stream_metrics
+from .runtime import INFERENCE_FIELDS, StreamConfig, StreamingRuntime, sleep_until
+from ..timing.transport import (CaptureSession, decode, encode, measurement_configs,
                         monotonic_us, timestamp_event)
 
 
@@ -151,7 +151,7 @@ def stream_receive(root: Path, args) -> Path:
             "warmup": run["warmup"], "clock_measurement": "real UDP four timestamps and local monotonic publication time",
             "scheduler": "one in-flight request; no pending queue; fresh history after completion; absolute publication deadlines"}
         atomic_json(output / "metadata.json", metadata)
-        from .report import write_stream_report
+        from ..reporting.html import write_stream_report
         write_stream_report(output, performance, summary, metadata, frame)
         publish_success(root, output, "stream_live" if args.with_model else "stream_live_timing")
         print(f"Live stream complete: {output / 'report.html'}", file=progress, flush=True)

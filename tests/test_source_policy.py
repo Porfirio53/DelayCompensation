@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from mytirex.aoi_experiment import eval_aoi
+from mytirex.evaluation.aoi import eval_aoi
 from mytirex.cli import main
 from mytirex.common import current_source, publish_success
-from mytirex.evaluation import resolved_config
-from mytirex.model import TiRexModel, read_tuning
-from mytirex.references import reference_identity
+from mytirex.evaluation.speed import resolved_config
+from mytirex.inference.model import TiRexModel, read_tuning
+from mytirex.data.references import reference_identity
 
 
 @pytest.mark.parametrize("command", ["doctor", "eval-speed", "benchmark", "eval-aoi"])

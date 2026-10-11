@@ -6,8 +6,8 @@ from types import MappingProxyType
 
 import numpy as np
 
-from .arrival import ReceiverView, _readonly
-from .timing import ClockMapping, clock_identities, integer_us, observation_timing
+from ..data.arrival import ReceiverView, _readonly
+from .clock import ClockMapping, clock_identities, integer_us, observation_timing
 
 
 @dataclass(frozen=True)
