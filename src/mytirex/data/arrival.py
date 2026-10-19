@@ -99,6 +99,11 @@ class ReceiverView:
     reason: str
     timing: ObservationTiming | None = None  # None preserves the legacy shared-clock protocol.
 
+    @property
+    def last_values(self) -> dict[str, float]:
+        """Named projection used by the generic streaming boundary."""
+        return {"speed": float(self.values_mps[-1])} if len(self.values_mps) else {}
+
 
 class PacketReceiver:
     """Driver-side event state. Never pass this object or its schedule to a model."""

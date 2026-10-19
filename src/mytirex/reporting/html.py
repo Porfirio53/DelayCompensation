@@ -286,13 +286,23 @@ def write_stream_report(output: Path, performance: pd.DataFrame, summary: pd.Dat
         frame = publications[publications.unit_id == unit].sort_values("publish_time_us").iloc[:6000]
         x = (frame.publish_time_us.to_numpy() - int(frame.publish_time_us.iloc[0])) / 1e6
         fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
-        if "reference_mps" in frame:
-            axes[0].plot(x, numeric_column(frame, "reference_mps"), color="black", label="Causal CAN reference")
-        axes[0].plot(x, numeric_column(frame, "last_observation_mps"), color="#888888", linestyle="--", label="Received hold")
-        if metadata["model_inference"]:
-            axes[0].plot(x, numeric_column(frame, "delivery_hold_mps"), color="#d55e00", label="Delivery hold", alpha=.7)
-        axes[0].plot(x, numeric_column(frame, "prediction_mps"), color="#0072b2", label="Published estimate")
-        axes[0].set_ylabel("Speed (m/s)")
+        schema = metadata.get("selection", {}).get("signal_schema")
+        if schema:
+            # One representative signal in this timing report; all target rows
+            # remain in states.jsonl/publications.csv for downstream consumers.
+            name = schema["targets"][0]
+            for field, color, label in (("last_observation", "#888888", "Received hold"),
+                                        ("prediction", "#0072b2", "Published estimate")):
+                axes[0].plot(x, [row.get(name, np.nan) for row in frame[field]], color=color, label=label)
+            axes[0].set_ylabel(f"{name} ({schema.get('units', {}).get(name, 'input unit')})")
+        else:
+            if "reference_mps" in frame:
+                axes[0].plot(x, numeric_column(frame, "reference_mps"), color="black", label="Causal CAN reference")
+            axes[0].plot(x, numeric_column(frame, "last_observation_mps"), color="#888888", linestyle="--", label="Received hold")
+            if metadata["model_inference"]:
+                axes[0].plot(x, numeric_column(frame, "delivery_hold_mps"), color="#d55e00", label="Delivery hold", alpha=.7)
+            axes[0].plot(x, numeric_column(frame, "prediction_mps"), color="#0072b2", label="Published estimate")
+            axes[0].set_ylabel("Speed (m/s)")
         axes[1].plot(x[1:], np.diff(frame.publish_time_us.to_numpy()) / 1000, label="Actual publication interval")
         axes[1].axhline(metadata["selection"]["publication_period_ms"], color="black", linestyle="--", label="Scheduled interval")
         axes[1].set_ylabel("Interval (ms)")
@@ -307,7 +317,7 @@ def write_stream_report(output: Path, performance: pd.DataFrame, summary: pd.Dat
         destination = output / "plots"
         destination.mkdir(exist_ok=True)
         _save(fig, destination, "stream_trace.png")
-        body += "<img src='plots/stream_trace.png' alt='Published speed, actual intervals and cached trajectory coverage'>"
+        body += "<img src='plots/stream_trace.png' alt='Published signal, actual intervals and cached trajectory coverage'>"
     links = ["states.jsonl", "publications.csv", "inferences.csv", "runtime_metrics.csv",
              "metrics_summary.csv", "metrics_by_series.csv", "events.jsonl", "config.json", "metadata.json"]
     body += "<p>" + " · ".join(f"<a href='{name}'>{name}</a>" for name in links if (output / name).exists()) + "</p>"

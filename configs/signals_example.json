@@ -1,0 +1,7 @@
+{
+  "sample_period_us": 25000,
+  "targets": ["throttle", "brake", "steer"],
+  "past_covariates": ["speed"],
+  "future_covariates": [],
+  "units": {"throttle": "1", "brake": "1", "steer": "1", "speed": "m/s"}
+}

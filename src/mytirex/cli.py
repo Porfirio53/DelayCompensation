@@ -118,6 +118,7 @@ def main(argv=None) -> int:
     live.add_argument("--inference-period-ms", type=positive, default=25)
     live.add_argument("--context-length", type=positive)
     live.add_argument("--minimum-observations", type=positive)
+    live.add_argument("--signals-config", help="JSON schema for arbitrary targets/covariates and sample_period_us; default is legacy speed")
     live.add_argument("--stdout", action="store_true", help="Publish JSON lines to stdout; progress messages go to stderr")
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()

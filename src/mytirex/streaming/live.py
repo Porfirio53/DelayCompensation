@@ -16,7 +16,7 @@ from ..inference.model import TiRexModel
 from .replay import UNIT_FIELDS, stream_metrics
 from .runtime import INFERENCE_FIELDS, StreamConfig, StreamingRuntime, sleep_until
 from ..timing.transport import (CaptureSession, decode, encode, measurement_configs,
-                        monotonic_us, timestamp_event)
+                        monotonic_us, signal_configuration, timestamp_event)
 
 
 class StreamDatagrams(asyncio.DatagramProtocol):
@@ -72,14 +72,17 @@ def stream_receive(root: Path, args) -> Path:
         compute_estimate_us=args.compute_estimate_ms * 1000,
         warmup_requests=args.warmup if args.with_model else 0)
     receiver_id = "stream-receiver-" + uuid4().hex
+    schema, sample_period = signal_configuration(root, getattr(args, "signals_config", None))
     session = CaptureSession(receiver_id, clock_config, timing_config,
+        sample_period_us=sample_period, signal_schema=schema,
         context_length=args.context_length or config["context_length"],
         minimum_observations=args.minimum_observations or config["minimum_observations"])
     output = new_output(root, "stream_live_current" if args.with_model else "stream_live_timing")
     integration = integration_identity(root)
     selection = {"host": args.host, "port": args.port, "duration_s": args.duration_s,
         "with_model": args.with_model, "publication_period_ms": args.publish_period_ms,
-        "inference_period_ms": args.inference_period_ms, "stdout": args.stdout}
+        "inference_period_ms": args.inference_period_ms, "stdout": args.stdout,
+        "signal_schema": schema.to_dict() if schema else None, "sample_period_us": sample_period}
     atomic_json(output / "config.json", {"selection": selection, "stream": asdict(stream_config),
         "clock": asdict(clock_config), "timing": asdict(timing_config), "model_configuration": resolved,
         "receiver_clock_id": receiver_id, "context_length": session.context_length,
@@ -99,7 +102,8 @@ def stream_receive(root: Path, args) -> Path:
         with (output / "states.jsonl").open("w", encoding="utf-8", buffering=1) as states, \
                 (output / "events.jsonl").open("w", encoding="utf-8", buffering=1) as events:
             events.write(json.dumps({"kind": "header", "schema_version": 1, "receiver_clock_id": receiver_id,
-                "sample_period_us": 25000, "context_length": session.context_length,
+                "sample_period_us": sample_period, "signal_schema": schema.to_dict() if schema else None,
+                "context_length": session.context_length,
                 "minimum_observations": session.minimum_observations,
                 "clock_config": asdict(clock_config), "timing_config": asdict(timing_config)}) + "\n")
             def publish(row):

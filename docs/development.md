@@ -35,6 +35,8 @@ from mytirex.timing.receiver import TimestampedReceiver
 from mytirex.streaming.runtime import StreamConfig, StreamingRuntime
 ```
 
+通用信号接口位于 `signals.py`（`SignalSchema`、`SignalView`、`SignalForecast`），模型适配仍在 `inference/model.py`，源端 UDP 适配器为 `streaming/source.py`。外部调用、信号协议和两端接入详见 [通用信号指南](signals.md)。这部分扩展不改当前版 vendor、checkpoint、原车速数据或评价配置。
+
 内部导入、延迟导入、测试导入、monkeypatch 路径和保留的结果分析脚本均同步更新。静态语法树对比确认业务代码除导入语句外没有变化。目录变化会改变集成源码 SHA256，旧结果保留原身份；`vendor/tirex/`、权重、数据和运行配置保持原内容。
 
 数据视图只包含已经收到的历史。`ForecastTrajectory` 返回完整 9 分位数轨迹；`value_at()` 用于未来网格点，`value_at_offset()` 用于观测锚点到未来中位数之间的连续插值。时间、跨度和评分隔离规则见 [时间测量指南](aoi.md)。
@@ -86,6 +88,10 @@ rows = pd.read_csv("outputs/20261010_190625_942320_aoi_timing/aoi_queries.csv.gz
 命令验收覆盖 GPU 诊断、有限查询的速度回放、少量 benchmark 样本、纯时间及模型模式的 AoI、交付补偿、无模型及模型流式回放，以及 localhost UDP 接收和日志重放。使用现有本地数据和当前版模型，不下载数据，不启动完整正式评估。确切命令、退出状态和结果文件见 `outputs/verification/20261011_cleanup/verification.json`。
 
 `doctor --verify-assets` 是原迁移目录的完整内容身份检查，包含封存资产的文件校验，不加载封存模型。分发后的当前运行资产使用 `doctor --smoke` 检查。
+
+## 通用信号扩展验收
+
+2026-10-12 的通用信号扩展验收：MyTirex **98 项**回归／接口检查通过，CARLA 双端 **4 项**接入检查通过；当前版 GPU 完成单变量、联合目标加历史协变量、未来已知协变量三类短检查，及 1.5 s 合成双端模型接入。验证仅确认接口、因果接收和有限输出，正式 CARLA 与精度实验由使用者运行。记录位于 `outputs/verification/20261012_signals/verification.json`。以下分发包是原 0.1.0 归档，本次扩展在工作区源码中，尚未重新生成归档。
 
 ## 打包与迁移
 

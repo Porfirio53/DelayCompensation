@@ -5,9 +5,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from math import isfinite
 
+import numpy as np
+
 from ..data.arrival import ReceiverView
 from ..inference.delivery import ComputeLatencyEstimator, warmup_delivery
 from ..inference.model import ForecastTrajectory, observation_horizon
+from ..signals import SignalForecast, SignalView
 from ..timing.clock import integer_us, observation_timing
 from ..timing.transport import CaptureSession, monotonic_us
 
@@ -15,7 +18,11 @@ INFERENCE_FIELDS = ("request_id", "source_clock_id", "receiver_clock_id", "snaps
     "delivery_time_us", "queue_us", "compute_us", "dispatch_us", "compute_estimate_us", "reuse_us",
     "last_source_time_us", "aoi_us", "planned_steps", "effective_horizon_us", "selected_source_offset_us",
     "delivery_covered", "delivery_prediction_mps", "revision", "revision_at_delivery",
-    "packets_during_inference", "installed", "completed_in_window", "status", "failure_reason")
+    "packets_during_inference", "installed", "completed_in_window", "status", "failure_reason",
+    "delivery_prediction", "target_names", "sample_period_us", "future_covariate_observed_steps",
+    "future_covariate_latest", "future_covariate_cutoff_time_us")
+
+HORIZON_LIMITS = {"horizon_limit", "future_covariates_horizon_limit"}
 
 
 async def sleep_until(deadline_us: int) -> None:
@@ -48,13 +55,13 @@ class ForecastWork:
     request_id: int
     source_clock_id: str
     revision: int
-    view: ReceiverView
+    view: ReceiverView | SignalView
     started_at_us: int
     completed_at_us: int
     compute_estimate_us: float
     reuse_us: float
     planned_steps: int
-    trajectory: ForecastTrajectory | None
+    trajectory: ForecastTrajectory | SignalForecast | None
     failure_reason: str
 
     @property
@@ -70,12 +77,16 @@ class ForecastWork:
 class CachedForecast:
     work: ForecastWork
     installed_at_us: int
-    delivery_prediction_mps: float | None
+    delivery_values: dict[str, float] | None
+
+    @property
+    def delivery_prediction_mps(self) -> float | None:
+        return self.delivery_values.get("speed") if self.delivery_values else None
 
 
-def run_forecast(model, view: ReceiverView, request_id: int, source_id: str, revision: int,
+def run_forecast(model, view: ReceiverView | SignalView, request_id: int, source_id: str, revision: int,
                  estimate_us: float, config: StreamConfig) -> ForecastWork:
-    """Worker only sees detached received history, with no source or scoring driver."""
+    """Worker sees detached received targets and observed covariates, never scoring truth."""
     started = monotonic_us()
     # Cover this completion and the expected interval until the next completion.
     reuse_us = max(float(config.inference_period_us), estimate_us)
@@ -85,6 +96,9 @@ def run_forecast(model, view: ReceiverView, request_id: int, source_id: str, rev
                                     + estimate_us + reuse_us, margin_steps=config.margin_steps)
         if steps > config.maximum_prediction_steps:
             reason = "horizon_limit"
+        elif (isinstance(view, SignalView) and view.schema.future_covariates
+              and (view.known_future is None or view.known_future.shape[1] < steps)):
+            reason = "future_covariates_horizon_limit"
         else:
             model.synchronize()
             trajectory = model.forecast(view, steps)
@@ -108,13 +122,16 @@ class StreamingRuntime:
 
     def __init__(self, session: CaptureSession, config: StreamConfig, *, model=None,
                  estimator: ComputeLatencyEstimator | None = None, executor=None,
-                 on_publish=None, on_inference=None):
+                 on_publish=None, on_inference=None, on_snapshot=None):
         if model is not None and model.batch_size != 1:
             raise ValueError("Streaming inference requires batch_size=1")
         self.session, self.config, self.model = session, config, model
         self.estimator = estimator or ComputeLatencyEstimator(config.compute_estimate_us)
         self.on_publish = on_publish or (lambda row: None)
         self.on_inference = on_inference or (lambda row: None)
+        # Attach locally observed covariates to a detached view on the owner
+        # thread, before submitting the native model request.
+        self.on_snapshot = on_snapshot
         self._owns_executor = model is not None and executor is None
         self.executor = executor
         if self._owns_executor:
@@ -149,7 +166,7 @@ class StreamingRuntime:
         if timing is None or not timing.valid:
             return None
         trajectory = self.cache.work.trajectory
-        return (trajectory.values_mps.shape[1] * trajectory.sample_period_us
+        return (trajectory.prediction_steps * trajectory.sample_period_us
                 - timing.source_offset_us) * timing.clock.rate
 
     async def _wait_changed(self, timeout_us: float) -> None:
@@ -171,8 +188,12 @@ class StreamingRuntime:
             now = monotonic_us()
             if not self._running or now >= self.finish_us:
                 break
+            view = self.session.snapshot(now)
+            if view is not None and self.on_snapshot is not None:
+                view = self.on_snapshot(view)
             receiver = self.session.receiver
-            key = (self.session.source_clock_id, receiver.revision if receiver else 0)
+            key = (self.session.source_clock_id, receiver.revision if receiver else 0,
+                   view.features.get("covariate_revision", 0) if view is not None else 0)
             if key == last_key:
                 remaining = self._remaining_us(now)
                 threshold = self.estimator.estimate_us + self.config.publication_period_us
@@ -182,11 +203,17 @@ class StreamingRuntime:
                 if remaining > threshold:
                     await self._wait_changed(remaining - threshold)
                     continue
-            view = self.session.snapshot(now)
             if view is None or not view.ready:
                 await self._wait_changed(self.config.publication_period_us)
                 continue
             if not warmed:
+                if isinstance(view, SignalView) and view.schema.future_covariates:
+                    warmup_steps = observation_horizon(view, extra_delivery_us=self.estimator.estimate_us
+                        + max(self.config.inference_period_us, self.estimator.estimate_us), margin_steps=1)
+                    if view.known_future is None or view.known_future.shape[1] < warmup_steps:
+                        self.counts["horizon_limited"] += 1
+                        await self._wait_changed(self.config.publication_period_us)
+                        continue
                 self._in_flight = self._warming = True
                 self.counts["max_in_flight"] = 1
                 try:
@@ -222,13 +249,13 @@ class StreamingRuntime:
                 self.cache = CachedForecast(work, installed, None)
                 timing = self._cache_timing(installed)
                 if timing.valid and timing.source_offset_us <= work.planned_steps * view.sample_period_us + 1e-6:
-                    prediction = work.trajectory.value_at_offset(timing.source_offset_us, float(view.values_mps[-1]))
+                    prediction = work.trajectory.values_at_offset(timing.source_offset_us, view.last_values)
                 self.cache = CachedForecast(work, installed, prediction)
                 self.counts["forecasts_installed"] += 1
             elif not same_session:
                 self.counts["retired_forecasts_discarded"] += 1
             if work.failure_reason:
-                self.counts["horizon_limited" if work.failure_reason == "horizon_limit" else "model_failures"] += 1
+                self.counts["horizon_limited" if work.failure_reason in HORIZON_LIMITS else "model_failures"] += 1
             current_revision = self.session.receiver.revision if same_session else None
             self.on_inference({
                 "request_id": request_id, "source_clock_id": work.source_clock_id,
@@ -242,59 +269,74 @@ class StreamingRuntime:
                 "aoi_us": view.timing.age_us, "planned_steps": work.planned_steps,
                 "effective_horizon_us": view.timing.age_us + installed - view.query_time_us,
                 "selected_source_offset_us": timing.source_offset_us if timing else None,
-                "delivery_covered": prediction is not None, "delivery_prediction_mps": prediction,
+                "delivery_covered": prediction is not None, "delivery_prediction_mps": prediction.get("speed") if prediction else None,
+                "delivery_prediction": dict(prediction) if prediction is not None else None,
+                "target_names": list(view.last_values), "sample_period_us": view.sample_period_us,
                 "revision": work.revision, "revision_at_delivery": current_revision,
                 "packets_during_inference": current_revision - work.revision if same_session else None,
                 "installed": accepted, "completed_in_window": installed < self.finish_us,
                 "status": "ok" if successful else "not_run" if work.trajectory is None else "failed",
                 "failure_reason": work.failure_reason,
+                "future_covariate_observed_steps": (int(np.isfinite(view.known_future).all(axis=0).sum())
+                    if isinstance(view, SignalView) and view.known_future is not None else 0),
+                "future_covariate_latest": ({name: view.features["future_covariate_latest." + name]
+                    for name in view.schema.future_covariates if "future_covariate_latest." + name in view.features}
+                    if isinstance(view, SignalView) else {}),
+                "future_covariate_cutoff_time_us": view.features.get("future_covariate_cutoff_time_us"),
             })
-            if work.failure_reason and work.failure_reason != "horizon_limit" and not self.counts["forecasts_installed"]:
+            if work.failure_reason and work.failure_reason not in HORIZON_LIMITS and not self.counts["forecasts_installed"]:
                 raise RuntimeError(f"Initial streaming forecast failed: {work.failure_reason}")
 
     def _publication(self, scheduled: int, index: int, skipped: int) -> dict:
         view = self.session.snapshot(monotonic_us())
         published = monotonic_us()
         timing = view.timing if view is not None else None
-        last = float(view.values_mps[-1]) if view is not None and len(view.values_mps) else None
+        last = view.last_values if view is not None else {}
         elapsed = published - view.query_time_us if view is not None else 0
         age = timing.age_us + elapsed if timing is not None and timing.age_us is not None else None
         reason = "model_disabled" if self.model is None else "awaiting_forecast"
         mode, prediction, delivery_hold = "observation_hold", last, last
         offset = remaining = None
         cache = self.cache
-        if last is None:
+        if not last:
             mode, reason = "no_observation", "no_received_observation"
         elif cache is not None:
-            delivery_hold = cache.delivery_prediction_mps if cache.delivery_prediction_mps is not None else last
+            delivery_hold = cache.delivery_values if cache.delivery_values is not None else last
             selection = self._cache_timing(published, timing.clock if timing else None)
             if not selection.valid:
                 reason = selection.reason
             else:
                 trajectory = cache.work.trajectory
                 offset = selection.source_offset_us
-                remaining = (trajectory.values_mps.shape[1] * trajectory.sample_period_us - offset) * selection.clock.rate
+                remaining = (trajectory.prediction_steps * trajectory.sample_period_us - offset) * selection.clock.rate
                 if remaining >= -1e-6:
-                    prediction = trajectory.value_at_offset(offset, float(cache.work.view.values_mps[-1]))
+                    prediction = trajectory.values_at_offset(offset, cache.work.view.last_values)
                     mode, reason = "trajectory", "ok"
                 else:
                     reason = "trajectory_exhausted"
         elif timing is not None and not timing.valid:
             reason = timing.reason
+        schema = self.session.signal_schema
         return {
             "publication_index": index, "scheduled_time_us": scheduled,
             "snapshot_time_us": view.query_time_us if view is not None else published,
             "publish_time_us": published, "deadline_lateness_us": published - scheduled,
             "missed_ticks": skipped, "source_clock_id": self.session.source_clock_id or "",
             "receiver_clock_id": self.session.receiver_clock_id,
-            "last_source_time_us": int(view.source_time_us[-1]) if last is not None else None,
-            "last_observation_mps": last, "aoi_us": age,
+            "last_source_time_us": int(view.source_time_us[-1]) if last else None,
+            "last_observation": dict(last), "last_observation_mps": last.get("speed"), "aoi_us": age,
             "aoi_lower_us": timing.age_lower_us + elapsed if age is not None else None,
             "aoi_upper_us": timing.age_upper_us + elapsed if age is not None else None,
             "native_aoi_us": timing.native_age_us + elapsed if timing and timing.native_age_us is not None else None,
             "timing_valid": bool(timing and timing.valid),
             "context_ready": bool(view and view.features.get("context_ready", 0)),
-            "prediction_mps": prediction, "delivery_hold_mps": delivery_hold,
+            "prediction": dict(prediction), "delivery_hold": dict(delivery_hold),
+            "prediction_mps": prediction.get("speed"), "delivery_hold_mps": delivery_hold.get("speed"),
+            "target_names": list(schema.targets) if schema else ["speed"],
+            "past_covariate_names": list(schema.past_covariates) if schema else [],
+            "future_covariate_names": list(schema.future_covariates) if schema else [],
+            "units": dict(schema.units) if schema else {"speed": "m/s"},
+            "sample_period_us": self.session.sample_period_us,
             "mode": mode, "reason": reason, "fallback": self.model is not None and mode != "trajectory",
             "forecast_id": cache.work.request_id if cache else None,
             "forecast_source_time_us": cache.work.trajectory.source_time_us if cache else None,

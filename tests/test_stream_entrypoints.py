@@ -1,4 +1,5 @@
 """Short checks of live/replay adapters and publication-time scoring; no GPU."""
+import asyncio
 import json
 from pathlib import Path
 import socket
@@ -19,6 +20,10 @@ from mytirex.timing.receiver import TimingConfig
 from mytirex.streaming.replay import RealtimeReplay
 from mytirex.timing.clock import ClockConfig
 from mytirex.timing.transport import CaptureSession, sync_source
+from mytirex.signals import SignalSchema
+from mytirex.streaming.source import SignalSource
+from mytirex.streaming.runtime import sleep_until
+from mytirex.timing.transport import monotonic_us
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -177,6 +182,61 @@ def test_live_udp_stream_publishes_json_to_stdout_and_logs_replayable_inputs(mon
             assert query.get("last_source_time_us") == state["last_source_time_us"]
             if state["aoi_us"] is not None:
                 assert query["aoi_us"] + state["publish_time_us"] - state["snapshot_time_us"] == pytest.approx(state["aoi_us"])
+    finally:
+        worker.join(3)
+    assert not worker.is_alive() and not errors
+
+
+def test_named_udp_cli_reads_schema_writes_generic_report_and_replays_signals(monkeypatch, tmp_path):
+    output = isolated_output(monkeypatch, tmp_path, "mytirex.streaming.live")
+    schema = SignalSchema(("throttle", "steer"), ("speed",), units={"steer": "1"})
+    config = tmp_path / "signals.json"
+    config.write_text(json.dumps({**schema.to_dict(), "sample_period_us": 10_000}))
+    ready, errors, address = Event(), [], []
+
+    async def serve():
+        source = SignalSource(schema, sample_period_us=10_000)
+        transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(lambda: source, local_addr=("127.0.0.1", 0))
+        address.append(transport.get_extra_info("sockname"))
+        ready.set()
+        origin = monotonic_us()
+        try:
+            for sequence in range(90):
+                tick = origin + sequence * 10_000
+                await sleep_until(tick)
+                source.publish({"throttle": .4, "steer": sequence * .001, "speed": 10.},
+                               sequence=sequence, source_time_us=tick)
+        finally:
+            transport.close()
+
+    def worker_main():
+        try:
+            asyncio.run(serve())
+        except Exception as exc:
+            errors.append(exc)
+            ready.set()
+    worker = Thread(target=worker_main)
+    worker.start()
+    try:
+        assert ready.wait(3) and not errors
+        assert main(["stream-receive", "--host", "127.0.0.1", "--port", str(address[0][1]),
+            "--duration-s", ".5", "--sync-interval-ms", "40", "--context-length", "8",
+            "--minimum-observations", "2", "--signals-config", str(config)]) == 0
+        states = [json.loads(line) for line in (output / "states.jsonl").read_text().splitlines()]
+        assert any(set(row["prediction"]) == {"throttle", "steer"} and row["context_ready"] for row in states)
+        assert all(row["prediction_mps"] is None and row["sample_period_us"] == 10_000 for row in states)
+        assert read_json(output / "metadata.json")["selection"]["signal_schema"] == schema.to_dict()
+        assert (output / "report.html").is_file() and (output / "plots/stream_trace.png").is_file()
+        events = [json.loads(line) for line in (output / "events.jsonl").read_text().splitlines()]
+        header = events[0]
+        replayed = CaptureSession(header["receiver_clock_id"], ClockConfig(**header["clock_config"]),
+            TimingConfig(**header["timing_config"]), sample_period_us=header["sample_period_us"],
+            context_length=header["context_length"], minimum_observations=header["minimum_observations"],
+            signal_schema=SignalSchema(**header["signal_schema"]))
+        queries = [row for event in events[1:] if (row := replayed.process(event)) is not None]
+        assert len(queries) == len(states)
+        assert all(query.get("last_observation", {}) == state["last_observation"]
+                   for query, state in zip(queries, states, strict=True))
     finally:
         worker.join(3)
     assert not worker.is_alive() and not errors

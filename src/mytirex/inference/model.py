@@ -15,6 +15,7 @@ from time import perf_counter
 import numpy as np
 
 from ..data.arrival import ReceiverView, causal_filled_context
+from ..signals import SignalForecast, SignalView, causal_signal_context
 from ..common import (assert_local_imports, current_source, project_path, read_json,
                      require_current_source, source_hash, verify_files)
 from .gpu import cache_snapshot, configure_runtime
@@ -62,6 +63,13 @@ class ForecastTrajectory:
     batch_size: int = 1
 
     @property
+    def prediction_steps(self) -> int:
+        return self.values_mps.shape[1]
+
+    def values_at_offset(self, source_offset_us: float, last_values: dict) -> dict[str, float]:
+        return {"speed": self.value_at_offset(source_offset_us, last_values["speed"])}
+
+    @property
     def future_time_us(self) -> np.ndarray:
         return self.source_time_us + np.arange(1, self.values_mps.shape[1] + 1, dtype=np.int64) * self.sample_period_us
 
@@ -95,7 +103,7 @@ class ForecastTrajectory:
         return float(np.interp(source_offset_us, grid, values))
 
 
-def observation_horizon(view: ReceiverView, *, conservative: bool = True,
+def observation_horizon(view: ReceiverView | SignalView, *, conservative: bool = True,
                         extra_delivery_us: float = 0.0, margin_steps: int = 0) -> int:
     """Cover measured observation age plus receiver-side queue/compute time."""
     if not np.isfinite(extra_delivery_us) or extra_delivery_us < 0:
@@ -119,6 +127,24 @@ def observation_horizon(view: ReceiverView, *, conservative: bool = True,
 
 
 class TiRexModel:
+    @classmethod
+    def from_local(cls, root: Path, *, context_length: int | None = None,
+                   batch_size: int = 1, seed: int | None = None):
+        """Load the current local checkpoint for an external system / endpoint."""
+        root = Path(root).expanduser().resolve()
+        integer_us(batch_size, "batch_size", 1)
+        settings = read_tuning(root, "configs/tirex_tuning.json")
+        if context_length is not None:
+            if isinstance(context_length, bool) or not isinstance(context_length, int) or not 2 <= context_length <= 2048:
+                raise ValueError("context_length must be an integer from 2 to 2048")
+            settings["context_length"] = context_length
+        runtime = {**read_json(root / "configs/experiment.json")["runtime"], "batch_size": batch_size}
+        if seed is not None:
+            runtime["seed"] = seed
+        model = cls(root, settings, runtime)
+        model.load()
+        return model
+
     def __init__(self, root: Path, settings: dict, runtime: dict, source: str = "current"):
         require_current_source(source)
         if settings["source_directory"] != "TiRex":
@@ -242,7 +268,42 @@ class TiRexModel:
         return {"pad_context": self.settings["pad_context"], "tta_diff": self.settings["tta_diff"],
                 "tta_sign_flip": False}
 
-    def forecast_batch(self, views: list[ReceiverView], prediction_length: int) -> list[ForecastTrajectory]:
+    def prepare_signal_context(self, view: SignalView, prediction_length: int) -> tuple:
+        times, values, mask = view.source_time_us, view.values, view.received_mask
+        integer_us(view.sample_period_us, "sample_period_us", 1)
+        if (times.ndim != 1 or times.size < 2 or values.shape != (len(view.schema.names), len(times))
+                or mask.shape != times.shape or view.received_at_us.shape != times.shape
+                or view.native_source_time_us.shape != times.shape):
+            raise ValueError("Forecast needs aligned [signal, time] receiver history of length >= 2")
+        if not view.ready or not mask[-1] or np.any(np.diff(times) != view.sample_period_us):
+            raise ValueError(f"Signal history is not ready on its source grid: {view.reason}")
+        if (not np.isfinite(values[:, mask]).all() or np.any(view.received_at_us[mask] > view.query_time_us)
+                or np.any(view.received_at_us[mask] < 0)):
+            raise ValueError("History contains invalid or not-yet-arrived observations")
+        if view.timing is None:
+            if int(times[-1]) > view.query_time_us or np.any(view.received_at_us[mask] < times[mask]):
+                raise ValueError("History contains invalid or not-yet-arrived observations")
+        elif view.timing.clock is not None and view.timing.clock.at_receiver_us > view.query_time_us:
+            raise ValueError("History contains a future source-to-receiver clock mapping")
+        if np.any(np.isfinite(values[:, ~mask])) or np.any(view.received_at_us[~mask] != -1):
+            raise ValueError("Missing positions expose unreceived information")
+        context = values if mask.all() else causal_signal_context(view)
+        # Give torch writable, private storage; it must never share an immutable
+        # receiver snapshot even if that snapshot already has float32 layout.
+        context = np.array(context[:, -self.context_length:], dtype=np.float32, order="C", copy=True)
+        targets, past = len(view.schema.targets), len(view.schema.past_covariates)
+        known = None
+        if view.schema.future_covariates:
+            future = view.known_future
+            if (future is None or future.ndim != 2 or future.shape[0] != len(view.schema.future_covariates)
+                    or future.shape[1] < prediction_length or np.isinf(future).any()):
+                raise ValueError("Future covariates must cover the whole requested horizon with finite values or NaN")
+            known = np.ascontiguousarray(np.concatenate((context[targets + past:], future[:, :prediction_length]),
+                                                       axis=1), dtype=np.float32)
+        return (np.ascontiguousarray(context[:targets]),
+                np.ascontiguousarray(context[targets:targets + past]) if past else None, known)
+
+    def forecast_batch(self, views: list[ReceiverView | SignalView], prediction_length: int) -> list[ForecastTrajectory | SignalForecast]:
         if self.model is None:
             raise RuntimeError("Load the local model before forecasting")
         if (isinstance(prediction_length, bool) or not isinstance(prediction_length, int) or prediction_length < 1
@@ -257,7 +318,8 @@ class TiRexModel:
         contexts, positions = [], []
         for index, view in enumerate(views):
             try:
-                contexts.append(self.prepare_context(view))
+                contexts.append(self.prepare_signal_context(view, prediction_length) if isinstance(view, SignalView)
+                                else (self.prepare_context(view)[None, :], None, None))
                 positions.append(index)
             except (TypeError, ValueError) as exc:
                 results[index] = self._fallback(view, prediction_length, str(exc))
@@ -265,20 +327,28 @@ class TiRexModel:
         if contexts:
             try:
                 with self.torch.inference_mode():
-                    series = [self.timeseries_type(target=self.torch.from_numpy(context).unsqueeze(0),
-                                                  past_covariates=None, future_covariates=None) for context in contexts]
+                    # One TimeseriesType per stream, with ALL its targets in the
+                    # same group; a batch of scalar series is not a joint forecast.
+                    series = [self.timeseries_type(target=self.torch.from_numpy(target),
+                              past_covariates=self.torch.from_numpy(past) if past is not None else None,
+                              future_covariates=self.torch.from_numpy(known) if known is not None else None)
+                              for target, past, known in contexts]
                     forecasts = self.model.forecast(series, prediction_length=prediction_length,
                                                    output_type="numpy", batch_size=len(contexts), **self.forecast_options())
                 if len(forecasts) != len(contexts):
                     raise RuntimeError("TiRex returned an unexpected forecast count")
                 for index, forecast in zip(positions, forecasts, strict=True):
-                    values = np.asarray(forecast)[0].copy()
-                    if values.shape != (len(self.quantiles), prediction_length) or not np.isfinite(values).all():
+                    view = views[index]
+                    named = isinstance(view, SignalView)
+                    values = np.asarray(forecast).copy() if named else np.asarray(forecast)[0].copy()
+                    expected = (len(view.schema.targets), len(self.quantiles), prediction_length) if named else (len(self.quantiles), prediction_length)
+                    if values.shape != expected or not np.isfinite(values).all():
                         results[index] = self._fallback(views[index], prediction_length, "nonfinite/invalid model trajectory")
                     else:
                         values.flags.writeable = False
-                        results[index] = ForecastTrajectory(int(views[index].source_time_us[-1]),
-                            views[index].sample_period_us, self.quantiles.copy(), values)
+                        results[index] = (SignalForecast(int(view.source_time_us[-1]), view.sample_period_us,
+                            self.quantiles.copy(), values, view.schema.targets) if named else
+                            ForecastTrajectory(int(view.source_time_us[-1]), view.sample_period_us, self.quantiles.copy(), values))
             except Exception as exc:
                 reason = f"{type(exc).__name__}: {exc}"
                 for index in positions:
@@ -295,7 +365,19 @@ class TiRexModel:
                                    "note": "First request may include FlashRNN/Triton compilation; not steady-state latency."}
         return results
 
-    def _fallback(self, view: ReceiverView, horizon: int, reason: str) -> ForecastTrajectory:
+    def _fallback(self, view: ReceiverView | SignalView, horizon: int, reason: str) -> ForecastTrajectory | SignalForecast:
+        if isinstance(view, SignalView):
+            indices = np.flatnonzero(view.received_mask)
+            if not len(indices) or not len(view.source_time_us):
+                raise RuntimeError(f"No received observation for fallback: {reason}")
+            latest = int(indices[-1])
+            last = view.values[:len(view.schema.targets), latest]
+            if not np.isfinite(last).all():
+                raise RuntimeError(f"No finite received observation for fallback: {reason}")
+            values = np.broadcast_to(last[:, None, None], (len(last), len(self.quantiles), horizon)).copy()
+            values.flags.writeable = False
+            return SignalForecast(int(view.source_time_us[latest]), view.sample_period_us, self.quantiles.copy(),
+                                  values, view.schema.targets, "failed", reason, True)
         observed = view.values_mps[view.received_mask]
         if not len(observed) or not np.isfinite(observed[-1]) or not len(view.source_time_us):
             raise RuntimeError(f"No finite received observation for fallback: {reason}")
@@ -305,11 +387,27 @@ class TiRexModel:
         return ForecastTrajectory(int(view.source_time_us[latest_received]), view.sample_period_us, self.quantiles.copy(),
                                   values, "failed", reason, True)
 
-    def forecast(self, view: ReceiverView, prediction_length: int) -> ForecastTrajectory:
+    def forecast(self, view: ReceiverView | SignalView, prediction_length: int) -> ForecastTrajectory | SignalForecast:
         return self.forecast_batch([view], prediction_length)[0]
 
-    def forecast_observation(self, view: ReceiverView, *, conservative: bool = True,
-                             extra_delivery_us: float = 0.0, margin_steps: int = 0) -> ForecastTrajectory:
+    def predict_signals(self, targets: dict, prediction_length: int, *, past_covariates: dict | None = None,
+                        future_covariates: dict | None = None, sample_period_us: int = 25_000,
+                        source_time_us: int | None = None, units: dict | None = None) -> SignalForecast:
+        """Single or joint prediction from named, aligned numeric arrays.
+
+        Future-covariate arrays contain T history ticks followed by >=H future
+        positions. Supply known values and NaN for unobserved positions, using
+        TiRex-2's native missing-value mask. Returned rows retain target order.
+        """
+        integer_us(prediction_length, "prediction_length", 1)
+        view = SignalView.from_history(targets, past_covariates=past_covariates,
+            future_covariates=future_covariates, sample_period_us=sample_period_us,
+            source_time_us=source_time_us, units=units)
+        self.prepare_signal_context(view, prediction_length)
+        return self.forecast(view, prediction_length)
+
+    def forecast_observation(self, view: ReceiverView | SignalView, *, conservative: bool = True,
+                             extra_delivery_us: float = 0.0, margin_steps: int = 0) -> ForecastTrajectory | SignalForecast:
         """Cover AoI and, when supplied, estimated queue/compute delay."""
         length = observation_horizon(view, conservative=conservative,
                                      extra_delivery_us=extra_delivery_us, margin_steps=margin_steps)

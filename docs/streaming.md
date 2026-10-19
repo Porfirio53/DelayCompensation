@@ -1,5 +1,7 @@
 # 流式接收、异步推理与连续状态发布
 
+流式运行器现支持 `CaptureSession(signal_schema=SignalSchema(...))` 的任意命名变量输入和联合预测，发布 `prediction`、`last_observation`、`delivery_hold` 字典。真实 UDP 可用 `stream-receive --signals-config <JSON>`；不指定时保持原车速模式。目标、协变量、源适配器和多端部署见 [通用信号指南](signals.md)。本文其余章节说明原车速实验与共有调度机制。
+
 第三步在已有接收缓冲区、时钟同步和计算时延补偿外增加双速率运行器。数据持续进入 `TimestampedReceiver`；当前版 TiRex 在一个后台线程中以 batch=1 更新轨迹；事件循环每 25 ms 按实际发布时刻从缓存轨迹取值。TiRex 仍完整计算历史上下文，内部状态复用留给下一阶段。
 
 采用已有的 `data/prepared/comma2k19/v1/` 因果 ZOH CAN speed。它提供 40 Hz 网格、原传感器时间和冻结划分，能够直接评价发布时刻误差，无需新下载或准备数据。开发及实验入口只选择 `vendor/tirex/` 当前版，规则见 [AGENTS.md](../AGENTS.md)。

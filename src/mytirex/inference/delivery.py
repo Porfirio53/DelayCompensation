@@ -7,6 +7,7 @@ import pandas as pd
 
 from ..reporting.aoi_metrics import AoiAccumulator, error_statistics
 from ..data.arrival import ReceiverView
+from ..signals import SignalForecast, SignalView
 from ..evaluation.benchmark import latency_summary
 from .model import ForecastTrajectory, observation_horizon
 from ..timing.clock import horizon_steps, integer_us
@@ -28,9 +29,9 @@ class ComputeLatencyEstimator:
 
 @dataclass(frozen=True)
 class DeliveryForecast:
-    trajectory: ForecastTrajectory
-    prediction_start: float
-    prediction_delivery: float
+    trajectory: ForecastTrajectory | SignalForecast
+    prediction_start: float | dict[str, float]
+    prediction_delivery: float | dict[str, float]
     compute_estimate_us: float
     compute_us: int
     queue_us: int
@@ -41,7 +42,7 @@ class DeliveryForecast:
     delivery_covered: bool
 
 
-def forecast_delivery(model, view: ReceiverView, estimator: ComputeLatencyEstimator, *,
+def forecast_delivery(model, view: ReceiverView | SignalView, estimator: ComputeLatencyEstimator, *,
                       queue_us: int = 0) -> DeliveryForecast:
     """Generate once, then select the median at actual CPU-trajectory readiness.
 
@@ -63,20 +64,22 @@ def forecast_delivery(model, view: ReceiverView, estimator: ComputeLatencyEstima
     offset = timing.source_offset_us if timing is not None else view.query_time_us - int(view.source_time_us[-1])
     age = timing.age_us if timing is not None else offset
     delivery_offset = offset + (queue_us + compute_us) / rate
-    covered = delivery_offset <= trajectory.values_mps.shape[1] * view.sample_period_us + 1e-6
-    last = float(view.values_mps[-1])
-    at_start, at_delivery = last, last
+    covered = delivery_offset <= trajectory.prediction_steps * view.sample_period_us + 1e-6
+    last = view.last_values
+    at_start, at_delivery = dict(last), dict(last)
     if trajectory.status == "ok":
-        at_start = trajectory.value_at_offset(offset, last)
+        at_start = trajectory.values_at_offset(offset, last)
         if covered:
-            at_delivery = trajectory.value_at_offset(delivery_offset, last)
+            at_delivery = trajectory.values_at_offset(delivery_offset, last)
         estimator.update(compute_us)
+    if not isinstance(view, SignalView):
+        at_start, at_delivery = at_start["speed"], at_delivery["speed"]
     return DeliveryForecast(trajectory, at_start, at_delivery, estimate, compute_us, queue_us,
         view.query_time_us + queue_us + compute_us, offset, delivery_offset,
         age + queue_us + compute_us, covered)
 
 
-def warmup_delivery(model, view: ReceiverView, estimator: ComputeLatencyEstimator, requests: int,
+def warmup_delivery(model, view: ReceiverView | SignalView, estimator: ComputeLatencyEstimator, requests: int,
                     reuse_us: float = 0.0) -> dict:
     """Prewarm the actual short-horizon path; omit the first request from EWMA."""
     steps = observation_horizon(view, extra_delivery_us=estimator.estimate_us + reuse_us, margin_steps=1)

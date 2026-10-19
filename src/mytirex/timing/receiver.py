@@ -3,10 +3,12 @@ from collections import deque
 from dataclasses import asdict, dataclass
 from math import isfinite
 from types import MappingProxyType
+from typing import Mapping
 
 import numpy as np
 
 from ..data.arrival import ReceiverView, _readonly
+from ..signals import SignalSchema, SignalView
 from .clock import ClockMapping, clock_identities, integer_us, observation_timing
 
 
@@ -27,20 +29,51 @@ class TimestampedPacket:
     source_clock_id: str
     sequence: int
     source_time_us: int
-    value_mps: float
+    value_mps: float | None = None
     native_source_time_us: int | None = None
+    values: Mapping[str, float] | None = None
+    future_values: Mapping[str, tuple[float, ...]] | None = None
 
     def __post_init__(self):
         if not isinstance(self.source_clock_id, str) or not self.source_clock_id:
             raise ValueError("Packet needs a source monotonic-clock identity")
         integer_us(self.sequence, "sequence")
         integer_us(self.source_time_us, "source_time_us")
-        if isinstance(self.value_mps, bool) or not isfinite(self.value_mps):
+        if (self.value_mps is None) == (self.values is None):
+            raise ValueError("Supply either legacy value_mps or named values")
+        if self.value_mps is not None and (isinstance(self.value_mps, bool) or not isfinite(self.value_mps)):
             raise ValueError("Packet speed must be finite")
+        if self.values is not None:
+            if (not isinstance(self.values, Mapping) or not self.values
+                    or any(not isinstance(k, str) or not k.strip() or isinstance(v, bool) or not isfinite(v)
+                           for k, v in self.values.items())):
+                raise ValueError("Packet values must map nonempty signal names to finite numbers")
+            object.__setattr__(self, "values", MappingProxyType({k: float(v) for k, v in self.values.items()}))
+        if self.future_values is not None:
+            if not isinstance(self.future_values, Mapping) or self.values is None:
+                raise ValueError("Future-known values require a named signal packet")
+            future = {}
+            for name, values in self.future_values.items():
+                if (name not in self.values or isinstance(values, (str, bytes)) or not len(values)
+                        or any(isinstance(v, bool) or not isfinite(v) for v in values)):
+                    raise ValueError("Future-known values must be finite arrays of declared signals")
+                future[name] = tuple(float(v) for v in values)
+            if len({len(values) for values in future.values()}) > 1:
+                raise ValueError("Future-known arrays must have matching lengths")
+            object.__setattr__(self, "future_values", MappingProxyType(future))
         if self.native_source_time_us is not None:
             integer_us(self.native_source_time_us, "native_source_time_us")
             if self.native_source_time_us > self.source_time_us:
                 raise ValueError("Native observation follows the packet source tick")
+
+    def validate_schema(self, schema: SignalSchema | None) -> None:
+        if schema is None:
+            if self.values is not None:
+                raise ValueError("Named packets require a signal_schema on the receiver")
+        else:
+            schema.validate_values(self.values)
+            if self.future_values is not None and set(self.future_values) != set(schema.future_covariates):
+                raise ValueError("Future-known packet values must match the schema's future covariates")
 
 
 class TimestampedReceiver:
@@ -53,13 +86,14 @@ class TimestampedReceiver:
 
     def __init__(self, source_clock_id: str, receiver_clock_id: str, *, sample_period_us: int = 25000,
                  capacity: int = 2048, statistics_packets: int = 64,
-                 timing_config: TimingConfig | None = None):
+                 timing_config: TimingConfig | None = None, signal_schema: SignalSchema | None = None):
         clock_identities(source_clock_id, receiver_clock_id)
         self.source_clock_id, self.receiver_clock_id = source_clock_id, receiver_clock_id
         self.sample_period_us = integer_us(sample_period_us, "sample_period_us", 1)
         self.capacity = integer_us(capacity, "capacity", 1)
         integer_us(statistics_packets, "statistics_packets", 1)
         self.timing_config = timing_config or TimingConfig()
+        self.signal_schema = signal_schema
         self._packets = {}
         self._recent = deque(maxlen=statistics_packets)
         self._origin = None
@@ -78,6 +112,7 @@ class TimestampedReceiver:
 
     def ingest(self, packet: TimestampedPacket, received_at_us: int) -> bool:
         receipt = integer_us(received_at_us, "received_at_us")
+        self.validate_packet(packet)
         if packet.source_clock_id != self.source_clock_id:
             raise ValueError("Packet source clock changed; start a new receiver and synchronizer")
         if receipt < max(self._last_receipt, self._query):
@@ -105,8 +140,11 @@ class TimestampedReceiver:
                 del self._packets[sequence]
         return True
 
+    def validate_packet(self, packet: TimestampedPacket) -> None:
+        packet.validate_schema(self.signal_schema)
+
     def snapshot(self, query_time_us: int, clock: ClockMapping | None, *, context_length: int = 256,
-                 minimum_observations: int = 32) -> ReceiverView:
+                 minimum_observations: int = 32) -> ReceiverView | SignalView:
         query = integer_us(query_time_us, "query_time_us")
         if query < max(self._query, self._last_receipt):
             raise ValueError("Receiver queries must be nondecreasing and include ingested receipt times")
@@ -120,13 +158,18 @@ class TimestampedReceiver:
         self._query = query
         if self._latest < 0:
             empty = _readonly(np.array([], dtype=np.int64))
+            if self.signal_schema is not None:
+                return SignalView(query, self.sample_period_us, empty, self.signal_schema,
+                    _readonly(np.empty((len(self.signal_schema.names), 0))), _readonly(np.array([], dtype=bool)),
+                    empty, empty, MappingProxyType({"received_count": 0.0}), None, False, "no_received_observation")
             return ReceiverView(query, self.sample_period_us, empty, _readonly(np.array([], dtype=float)),
                 _readonly(np.array([], dtype=bool)), empty, empty, MappingProxyType({"received_count": 0.0}),
                 None, False, "no_received_observation")
         start = max(0, self._latest + 1 - context_length)
         indices = np.arange(start, self._latest + 1, dtype=np.int64)
         times = self._origin + indices * self.sample_period_us
-        values = np.full(len(indices), np.nan)
+        schema = self.signal_schema
+        values = np.full(len(indices) if schema is None else (len(schema.names), len(indices)), np.nan)
         native = np.full(len(indices), -1, dtype=np.int64)
         receipts = np.full(len(indices), -1, dtype=np.int64)
         mask = np.zeros(len(indices), dtype=bool)
@@ -134,7 +177,11 @@ class TimestampedReceiver:
             observed = self._packets.get(int(sequence))
             if observed is not None:
                 packet, receipt = observed
-                mask[index], values[index], receipts[index] = True, packet.value_mps, receipt
+                mask[index], receipts[index] = True, receipt
+                if schema is None:
+                    values[index] = packet.value_mps
+                else:
+                    values[:, index] = [packet.values[name] for name in schema.names]
                 if packet.native_source_time_us is not None:
                     native[index] = packet.native_source_time_us
         timing = observation_timing(int(times[-1]), int(native[-1]) if native[-1] >= 0 else None,
@@ -172,6 +219,14 @@ class TimestampedReceiver:
                 pass  # An inconsistent clock is already explicit in timing.reason.
         ready = context_ready and timing.valid
         reason = timing.reason if context_ready else "insufficient_context"
+        if schema is not None:
+            future = self._packets[self._latest][0].future_values
+            if schema.future_covariates and not future:
+                ready, reason = False, "future_covariates_unavailable"
+            known = _readonly(np.asarray([future[name] for name in schema.future_covariates])) if future else None
+            return SignalView(query, self.sample_period_us, _readonly(times), schema, _readonly(values),
+                _readonly(mask), _readonly(receipts), _readonly(native), MappingProxyType(features),
+                timing.horizon_steps if timing.valid else None, ready, reason, timing, known)
         return ReceiverView(query, self.sample_period_us, _readonly(times), _readonly(values), _readonly(mask),
             _readonly(receipts), _readonly(native), MappingProxyType(features),
             timing.horizon_steps if timing.valid else None, ready, reason, timing)

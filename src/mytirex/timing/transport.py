@@ -17,6 +17,7 @@ from uuid import uuid4
 from ..common import (atomic_json, integration_identity, new_output, project_path, publish_success,
                      read_json, sha256)
 from ..data.prepared import PreparedCorpus
+from ..signals import SignalSchema
 from .receiver import TimestampedPacket, TimestampedReceiver, TimingConfig
 from .clock import ClockConfig, ClockSynchronizer, SyncExchange, clock_identities, integer_us
 
@@ -29,7 +30,10 @@ def monotonic_us() -> int:
 
 
 def encode(message: dict) -> bytes:
-    return json.dumps({"version": WIRE_VERSION, **message}, separators=(",", ":"), allow_nan=False).encode()
+    data = json.dumps({"version": WIRE_VERSION, **message}, separators=(",", ":"), allow_nan=False).encode()
+    if len(data) > MAX_DATAGRAM_BYTES:
+        raise ValueError("Datagram exceeds the timestamp protocol size limit")
+    return data
 
 
 def decode(data: bytes) -> dict:
@@ -54,10 +58,17 @@ def measurement_configs(root: Path, filename: str) -> tuple[dict, ClockConfig, T
     return config, ClockConfig(**config["clock"]), TimingConfig(**config["timing"])
 
 
+def signal_configuration(root: Path, filename: str | None) -> tuple[SignalSchema | None, int]:
+    if filename is None:
+        return None, 25_000  # Original speed-only wire contract.
+    config = read_json(project_path(root, filename))
+    period = integer_us(config.pop("sample_period_us", 25_000), "sample_period_us", 1)
+    return SignalSchema(**config), period
+
+
 def timestamp_event(message: dict, received_us: int, receiver_id: str, pending: dict) -> dict:
     """Decode one completed wire message for either capture or online inference."""
-    if message.get("sample_period_us") != 25000:
-        raise ValueError("Capture requires the 25,000 us source grid")
+    period = integer_us(message.get("sample_period_us"), "sample_period_us", 1)
     if message["kind"] == "sync_response":
         t1 = pending.get(message["request_id"])
         if t1 is None or message["receiver_clock_id"] != receiver_id or message["receiver_send_us"] != t1:
@@ -66,10 +77,10 @@ def timestamp_event(message: dict, received_us: int, receiver_id: str, pending: 
             "receiver_send_us": t1, "source_receive_us": message["source_receive_us"],
             "source_send_us": message["source_send_us"], "receiver_receive_us": received_us,
             "event_time_us": monotonic_us(), "series_id": message.get("series_id"),
-            "dataset_id": message.get("dataset_id")}
+            "dataset_id": message.get("dataset_id"), "sample_period_us": period}
     if message["kind"] == "packet":
         return {"kind": "packet", "received_at_us": received_us, "event_time_us": monotonic_us(),
-            "send_time_us": message.get("send_time_us"), "series_id": message.get("series_id"),
+            "send_time_us": message.get("send_time_us"), "series_id": message.get("series_id"), "sample_period_us": period,
             **{name: message.get(name) for name in TimestampedPacket.__dataclass_fields__}}
     raise ValueError("Unknown timestamp datagram kind")
 
@@ -82,7 +93,7 @@ def query_row(view, source_clock_id: str) -> dict:
         "last_source_time_us": int(view.source_time_us[-1]) if len(view.source_time_us) else None,
         "last_native_time_us": int(view.native_source_time_us[-1]) if len(view.source_time_us) else None,
         "last_received_at_us": int(view.received_at_us[-1]) if len(view.source_time_us) else None,
-        "last_observation_mps": float(view.values_mps[-1]) if len(view.values_mps) else None,
+        "last_observation_mps": view.last_values.get("speed"), "last_observation": view.last_values,
         "received_count": int(view.received_mask.sum()), "ready": view.ready, "reason": view.reason,
         "aoi_us": timing.age_us if timing else None,
         "aoi_lower_us": timing.age_lower_us if timing else None,
@@ -112,7 +123,8 @@ class CaptureSession:
     """Same causal state machine for live capture and recorded event replay."""
 
     def __init__(self, receiver_clock_id: str, clock_config: ClockConfig, timing_config: TimingConfig,
-                 *, sample_period_us: int = 25000, context_length: int = 256, minimum_observations: int = 32):
+                 *, sample_period_us: int = 25000, context_length: int = 256, minimum_observations: int = 32,
+                 signal_schema: SignalSchema | None = None):
         if not isinstance(receiver_clock_id, str) or not receiver_clock_id:
             raise ValueError("Capture needs a nonempty receiver clock identity")
         self.receiver_clock_id = receiver_clock_id
@@ -120,6 +132,9 @@ class CaptureSession:
         self.sample_period_us = integer_us(sample_period_us, "sample_period_us", 1)
         self.context_length = integer_us(context_length, "context_length", 1)
         self.minimum_observations = integer_us(minimum_observations, "minimum_observations", 1)
+        if signal_schema is not None and not isinstance(signal_schema, SignalSchema):
+            raise ValueError("signal_schema must be a SignalSchema")
+        self.signal_schema = signal_schema
         if self.minimum_observations > self.context_length:
             raise ValueError("minimum_observations exceeds capture context length")
         self.source_clock_id = None
@@ -141,7 +156,7 @@ class CaptureSession:
             self.clock = ClockSynchronizer(source_clock_id, self.receiver_clock_id, self.clock_config)
             self.receiver = TimestampedReceiver(source_clock_id, self.receiver_clock_id,
                 sample_period_us=self.sample_period_us, capacity=max(2048, self.context_length),
-                timing_config=self.timing_config)
+                timing_config=self.timing_config, signal_schema=self.signal_schema)
         return True
 
     def snapshot(self, query_time_us: int):
@@ -175,6 +190,8 @@ class CaptureSession:
             return row
         if kind not in {"sync", "packet"}:
             raise ValueError(f"Unsupported captured event: {kind}")
+        if integer_us(event.get("sample_period_us", self.sample_period_us), "sample_period_us", 1) != self.sample_period_us:
+            raise ValueError("Packet/synchronization grid does not match the receiver sample_period_us")
         clock_identities(event["source_clock_id"], self.receiver_clock_id)
         if kind == "sync":
             exchange = SyncExchange(**{name: event[name] for name in SyncExchange.__dataclass_fields__})
@@ -185,6 +202,7 @@ class CaptureSession:
             if receipt > timestamp:
                 raise ValueError("Packet is processed before its local receipt timestamp")
             packet = TimestampedPacket(**{name: event.get(name) for name in TimestampedPacket.__dataclass_fields__})
+            packet.validate_schema(self.signal_schema)
             if packet.source_time_us - packet.sequence * self.sample_period_us < 0:
                 raise ValueError("Packet sequence/source timestamps imply a negative source-grid origin")
             if event.get("send_time_us") is not None:
@@ -396,7 +414,8 @@ def replay_capture(root: Path, args) -> Path:
                 "clock_config": asdict(clock_config), "timing_config": asdict(timing_config), "recorded_header": header})
             session = CaptureSession(header["receiver_clock_id"], clock_config, timing_config,
                 sample_period_us=header["sample_period_us"], context_length=header["context_length"],
-                minimum_observations=header["minimum_observations"])
+                minimum_observations=header["minimum_observations"],
+                signal_schema=SignalSchema(**header["signal_schema"]) if header.get("signal_schema") else None)
             for line in stream:
                 row = session.process(json.loads(line))
                 if row is not None:
